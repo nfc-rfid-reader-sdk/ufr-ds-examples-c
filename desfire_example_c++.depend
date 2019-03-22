@@ -1,0 +1,28 @@
+# depslib dependency file v1.0
+1550577290 source:c:\users\projekat\desktop\desfire_example_c++\main.cpp
+	<iostream>
+	<string>
+	<cstring>
+	<string.h>
+	<string>
+	<sstream>
+	<time.h>
+	<iostream>
+	<fstream>
+	<ctype.h>
+	<vector>
+	<map>
+	<algorithm>
+	<iomanip>
+	<windows.h>
+	<conio.h>
+	"ufr-lib/include/uFCoder.h"
+
+1549618236 c:\users\projekat\desktop\desfire_example_c++\lib\include\ufcoder.h
+	<stdint.h>
+	<stddef.h>
+
+1549618236 c:\users\projekat\desktop\desfire_example_c++\ufr-lib\include\ufcoder.h
+	<stdint.h>
+	<stddef.h>
+
