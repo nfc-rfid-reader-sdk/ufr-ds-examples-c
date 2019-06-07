@@ -26,3 +26,26 @@
 	<stdint.h>
 	<stddef.h>
 
+1559897523 source:c:\users\projekat\desktop\ex_add\ufr-ds-examples-c\main.cpp
+	<iostream>
+	<string>
+	<cstring>
+	<string.h>
+	<string>
+	<sstream>
+	<time.h>
+	<iostream>
+	<fstream>
+	<ctype.h>
+	<vector>
+	<map>
+	<algorithm>
+	<iomanip>
+	<windows.h>
+	<conio.h>
+	"ufr-lib/include/uFCoder.h"
+
+1559895573 c:\users\projekat\desktop\ex_add\ufr-ds-examples-c\ufr-lib\include\ufcoder.h
+	<stdint.h>
+	<stddef.h>
+

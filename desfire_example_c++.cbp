@@ -15,7 +15,6 @@
 					<Add option="-g" />
 				</Compiler>
 				<Linker>
-					<Add option="-s" />
 					<Add option="-static-libstdc++" />
 					<Add option="-static-libgcc" />
 				</Linker>
@@ -42,8 +41,8 @@
 		</Compiler>
 		<Linker>
 			<Add option="-Wl,--enable-stdcall-fixup" />
-			<Add library="ufr-lib/windows/x86/uFCoder-x86.dll" />
-			<Add directory="ufr-lib/windows/x86" />
+			<Add library="lib/windows/x86/uFCoder-x86.dll" />
+			<Add directory="lib/windows/x86" />
 		</Linker>
 		<Unit filename="main.cpp" />
 		<Extensions>

@@ -16,10 +16,7 @@
 #include <conio.h>
 
 #define APP_VERSION	"1.0"
-#include "ufr-lib/include/uFCoder.h"
-
-
-
+#include "lib/include/uFCoder.h"
 
 void convert_str_to_key(std::string key_str, unsigned char *aes_key);
 bool prepare_key(unsigned char *aes_key);
@@ -645,26 +642,66 @@ void menu(char key)
 int main()
 {
 	char key;
-
+    int mode = 0;
 	UFR_STATUS status;
+    std::cout << "Select reader opening mode:" << std::endl;
+    std::cout <<" (1) - Simple Reader Open" << std::endl;
+    std::cout <<" (2) - Advanced Reader Open" << std::endl;
+    std::cin >> mode;
+    if (mode == 1){
+        status = ReaderOpen();
 
-    status = ReaderOpen();
+    } else if (mode == 2) {
 
+        uint32_t reader_type = 0;
+        std::string portNameStr = "";
+        std::string portInterfaceStr = "";
+        std::string argumentStr = "";
+        uint32_t port_interface = 0;
+
+        std::cout << "Enter reader type: " << std::endl;
+        scanf("%d%*c", &reader_type);
+        fflush(stdin);
+        std::cout << "Enter port name: " << std::endl;
+        std::cin >> portNameStr;
+		fflush(stdin);
+        std::cout << "Enter port interface: " << std::endl;
+        std::cin >> portInterfaceStr;
+		fflush(stdin);
+        std::cout << "Enter argument: " << std::endl;
+        std::cin >> argumentStr;
+		fflush(stdin);
+
+        if(portInterfaceStr == "U") {
+                port_interface = 85;
+            }
+        else if(portInterfaceStr == "T") {
+                port_interface = 84;
+            }
+        else {
+                port_interface = atoi(portInterfaceStr.c_str());
+            }
+            char port_name[portNameStr.length() + 1];
+            char arg[argumentStr.length() + 1];
+            memset(port_name,0, sizeof(port_name));
+            memset(arg,0, sizeof(arg));
+
+            strcpy(port_name, portNameStr.c_str());
+            strcpy(arg,argumentStr.c_str());
+
+             status = ReaderOpenEx(reader_type, port_name, port_interface, (void * )arg);
+
+    } else {
+        std::cout << "Invalid input. Press any key to quit the application..." << std::endl;
+        getchar();
+        return 0;
+}
 	if (status != UFR_OK)
 	{
 		printf("Error while opening device, status is: 0x%08X\n", status);
 		getchar();
 		return EXIT_FAILURE;
 	}
-	status = ReaderReset();
-	if (status != UFR_OK)
-	{
-		ReaderClose();
-		printf("Error while opening device, status is: 0x%08X\n", status);
-		getchar();
-		return EXIT_FAILURE;
-	}
-
 
 	Sleep(500);
 
@@ -701,7 +738,7 @@ void GetCardUID(void)
     unsigned short card_status;
 	unsigned short exec_time;
 
-	unsigned char data[192];
+	unsigned char data[11];
 	unsigned char data_length;
 
 	unsigned long aid;
@@ -709,6 +746,7 @@ void GetCardUID(void)
 	unsigned char aes_key_ext[16];
 	unsigned char aes_key_nr = 0;
 
+	memset(data, 0, 11);
 
     aid = strtol(settings[1].c_str(),NULL,16);
 
@@ -736,6 +774,7 @@ void GetCardUID(void)
     if (status)
     {
         std::cout << "uFR_int_GetDesfireUID(): " << UFR_Status2String(status) << std::endl;
+
     }
 
     std::cout << "Operation completed\n";
@@ -745,7 +784,6 @@ void GetCardUID(void)
     std::cout << "Card status is: " << switch_card_status(card_status) << std::endl;
 
     std::cout << "Execution time: " << exec_time << " ms" << std::endl;
-
     std::cout << "CARD UID = ";
         for (int a = 0; a < 7; a++)
         {
