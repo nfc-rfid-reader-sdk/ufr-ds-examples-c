@@ -638,38 +638,28 @@ void menu(char key)
 	printf(" --------------------------------------------------\n");
 }
 //------------------------------------------------------------------------------
-
-int main()
+UFR_STATUS reader_open_ex()
 {
-	char key;
-    int mode = 0;
-	UFR_STATUS status;
-    std::cout << "Select reader opening mode:" << std::endl;
-    std::cout <<" (1) - Simple Reader Open" << std::endl;
-    std::cout <<" (2) - Advanced Reader Open" << std::endl;
-    std::cin >> mode;
-    if (mode == 1){
-        status = ReaderOpen();
 
-    } else if (mode == 2) {
+UFR_STATUS status;
 
-        uint32_t reader_type = 0;
         std::string portNameStr = "";
         std::string portInterfaceStr = "";
         std::string argumentStr = "";
         uint32_t port_interface = 0;
+        uint32_t reader_type = 0;
 
         std::cout << "Enter reader type: " << std::endl;
         scanf("%d%*c", &reader_type);
         fflush(stdin);
         std::cout << "Enter port name: " << std::endl;
-        std::cin >> portNameStr;
+        getline(std::cin, portNameStr);
 		fflush(stdin);
         std::cout << "Enter port interface: " << std::endl;
         std::cin >> portInterfaceStr;
 		fflush(stdin);
         std::cout << "Enter argument: " << std::endl;
-        std::cin >> argumentStr;
+        getline(std::cin, argumentStr);
 		fflush(stdin);
 
         if(portInterfaceStr == "U") {
@@ -689,7 +679,26 @@ int main()
             strcpy(port_name, portNameStr.c_str());
             strcpy(arg,argumentStr.c_str());
 
-             status = ReaderOpenEx(reader_type, port_name, port_interface, (void * )arg);
+             status = ReaderOpenEx(reader_type, port_name, port_interface, (void *)arg);
+
+        return status;
+}
+
+
+int main()
+{
+	char key;
+    int mode = 0;
+	UFR_STATUS status;
+    std::cout << "Select reader opening mode:" << std::endl;
+    std::cout <<" (1) - Simple Reader Open" << std::endl;
+    std::cout <<" (2) - Advanced Reader Open" << std::endl;
+    std::cin >> mode;
+    if (mode == 1){
+        status = ReaderOpen();
+
+    } else if (mode == 2) {
+        status = reader_open_ex();
 
     } else {
         std::cout << "Invalid input. Press any key to quit the application..." << std::endl;
