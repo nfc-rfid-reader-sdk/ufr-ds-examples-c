@@ -15,7 +15,7 @@
 #include <windows.h>
 #include <conio.h>
 
-#define APP_VERSION	"1.2"
+#define APP_VERSION	"1.3"
 #include "lib/include/uFCoder.h"
 
 void convert_str_to_key(std::string key_str, unsigned char *key, unsigned char key_length);
@@ -26,6 +26,7 @@ char* switch_card_status(unsigned short card_status);
 void print_settings();
 void PrepareSettings(void);
 
+void SetKeyMode(void);
 void GetCardUID(void);
 void GetFreeMemory(void);
 void FormatCard(void);
@@ -52,6 +53,8 @@ void ReadStdFile(void);
 void ChangeSettings(void);
 void GetApplicationIds(void);
 void ClearRecord(void);
+void SamStoreUnlockKey(void);
+void SamStoreKey(void);
 
 bool set_not_changeable = false, create_with_master = false, master_not_changeable = false;
 
@@ -65,6 +68,7 @@ unsigned char key_nr;
 bool internal_key = false, master_authent_req = true;
 unsigned char file_id;
 unsigned char key_type_nr;
+bool sam_key = false;
 
 //----------------------------------
 void Convert(std::string str, uint8_t *array) {
@@ -418,6 +422,10 @@ char* switch_card_status(unsigned short card_status)
         strcat(retstr, "CARD_CRYPTO_ERROR");
 		break;
 
+     case NOT_SUPPORTED_KEY_TYPE:
+        strcat(retstr, "NOT_SUPPORTED_KEY_TYPE");
+        break;
+
 	default:
 		strcat(retstr, "Unknown status");
 		break;
@@ -627,12 +635,13 @@ void usage(void)
 			   "  (j) - Make file\n"
 			   "  (k) - Delete file\n"
 			   "  (l) - Write Std file or record\n"
-			   "  (m) - Read Std file of records\n"
+			   "  (m) - Read Std file or records\n"
 			   "  (n) - Read Value file\n"
 			   "  (o) - Increase Value file\n"
 			   "  (p) - Decrease Value file\n"
-			   "  (r) - Clear Record file\n"
-			   "  (s) - Get application IDs\n"
+			   "  (q) - Clear Record file\n"
+			   "  (r) - Get application IDs\n"
+			   "  (s) - Store key into SAM\n"
 			   "  (t) - Change config parameters\n");
 			   printf(" --------------------------------------------------\n");
 }
@@ -643,19 +652,8 @@ void menu(char key)
 	switch (key)
 	{
         case '0':
-
-            internal_key = !internal_key;
-
-            if (internal_key == false)
-            {
-                std::cout << " Authentication mode is set to PROVIDED KEY\n";
-
-            } else
-            {
-                std::cout << " Authentication mode is set to INTERNAL KEY\n";
-            }
+            SetKeyMode();
             break;
-
         case '1':
             master_authent_req = !master_authent_req;
 
@@ -694,57 +692,79 @@ void menu(char key)
             InternalKeysUnlock();
             break;
         case 'a':
+        case 'A':
             SetBaudRate();
             break;
         case 'b':
+        case 'B':
             GetBaudRate();
             break;
         case 'c':
+        case 'C':
             StoreKeyIntoReader();
             break;
         case 'd':
+        case 'D':
             ChangeKey();
             break;
         case 'e':
+        case 'E':
             ChangeKeySettings();
             break;
         case 'f':
+        case 'F':
             GetKeySettings();
             break;
         case 'g':
+        case 'G':
             MakeApplication();
             break;
         case 'h':
+        case 'H':
             DeleteApplication();
             break;
         case 'j':
+        case 'J':
             MakeFile();
             break;
         case 'k':
+        case 'K':
             DeleteFile();
             break;
         case 'l':
+        case 'L':
             WriteStdFile();
             break;
         case 'm':
+        case 'M':
             ReadStdFile();
             break;
         case 'n':
+        case 'N':
             ReadValueFile();
             break;
         case 'o':
+        case 'O':
             IncreaseValueFile();
             break;
         case 'p':
+        case 'P':
             DecreaseValueFile();
             break;
-        case 'r':
+        case 'q':
+        case 'Q':
             ClearRecord();
             break;
-        case 's':
+        case 'r':
+        case 'R':
             GetApplicationIds();
             break;
+        case 's':
+        case 'S':
+            SamStoreKey();
+            break;
         case 't':
+        case 'T':
             ChangeSettings();
             break;
 
@@ -830,9 +850,27 @@ int main()
 	}
 
 	Sleep(500);
+	unsigned char ver_major, ver_minor, build;
+	status = GetReaderFirmwareVersion(&ver_major, &ver_minor);
+	if (status != UFR_OK)
+	{
+		printf("Error while reading firmware version, status is: 0x%08X\n", status);
+		getchar();
+		return EXIT_FAILURE;
+	}
+
+	status = GetBuildNumber(&build);
+	if (status != UFR_OK)
+	{
+		printf("Error while reading firmware version, status is: 0x%08X\n", status);
+		getchar();
+		return EXIT_FAILURE;
+	}
+
 
 	printf(" --------------------------------------------------\n");
 	printf("        uFR NFC reader successfully opened.\n");
+	printf("        Firmware version %d.%d.%d \n", ver_major, ver_minor, build);
 	printf(" --------------------------------------------------\n");
 
 	    PrepareSettings();
@@ -857,6 +895,42 @@ int main()
 }
 //------------------------------------------------------------------------------
 
+void SetKeyMode(void)
+{
+    UFR_STATUS status;
+    int mode = 0;
+    unsigned char atr_data[50];
+    unsigned char len = 50;
+	std::cout << "Select authentication mode:" << std::endl;
+    std::cout <<" (1) - Internal key" << std::endl;
+    std::cout <<" (2) - Provided key" << std::endl;
+    std::cout <<" (3) - SAM key" << std::endl;
+    std::cin >> mode;
+
+    switch(mode)
+    {
+    case 1:
+        internal_key = true;
+        sam_key = false;
+        std::cout << " Authentication mode is set to INTERNAL KEY\n";
+        break;
+    case 2:
+        internal_key = false;
+        sam_key = false;
+        std::cout << " Authentication mode is set to PROVIDED KEY\n";
+        break;
+    case 3:
+        internal_key = false;
+        sam_key = true;
+        status = open_ISO7816_interface(atr_data, &len);
+        if(status == UFR_OK)
+            std::cout << " Authentication mode is set to SAM KEY\n";
+        else
+            std::cout << " SAM card did not opened\n";
+        break;
+    }
+}
+
 void GetCardUID(void)
 {
      UFR_STATUS status;
@@ -880,7 +954,9 @@ void GetCardUID(void)
 
     if (internal_key == false)
     {
-        if (!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if (!prepare_key(key_ext))
         {
             return;
         }
@@ -903,14 +979,29 @@ void GetCardUID(void)
     }
     else
     {
-        if(key_type_nr == AES_KEY_TYPE)
-            status = uFR_int_GetDesfireUid_aes_PK(key_ext, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
-        else if(key_type_nr == DES_KEY_TYPE)
-            status = uFR_int_GetDesfireUid_des_PK(key_ext, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
-        else if(key_type_nr == DES2K_KEY_TYPE)
-            status = uFR_int_GetDesfireUid_2k3des_PK(key_ext, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
+        if(sam_key == true)
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_SAM_GetDesfireUidAesAuth(key_nr, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_SAM_GetDesfireUidDesAuth(key_nr, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_SAM_GetDesfireUid2k3desAuth(key_nr, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
+            else
+                status = uFR_SAM_GetDesfireUid3k3desAuth(key_nr, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
+        }
         else
-            status = uFR_int_GetDesfireUid_3k3des_PK(key_ext, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_int_GetDesfireUid_aes_PK(key_ext, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_int_GetDesfireUid_des_PK(key_ext, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_int_GetDesfireUid_2k3des_PK(key_ext, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
+            else
+                status = uFR_int_GetDesfireUid_3k3des_PK(key_ext, aid, aid_key_nr, data, &data_length, &card_status, &exec_time);
+        }
+
     }
 
     if (status)
@@ -981,7 +1072,9 @@ void FormatCard()
 
     if (internal_key == false)
     {
-        if (!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if (!prepare_key(key_ext))
         {
             return;
         }
@@ -1004,14 +1097,28 @@ void FormatCard()
 	}
 	else
 	{
-		if(key_type_nr == AES_KEY_TYPE)
-            status = uFR_int_DesfireFormatCard_aes_PK(key_ext, &card_status, &exec_time);
-        else if(key_type_nr == DES_KEY_TYPE)
-            status = uFR_int_DesfireFormatCard_des_PK(key_ext, &card_status, &exec_time);
-        else if(key_type_nr == DES2K_KEY_TYPE)
-            status = uFR_int_DesfireFormatCard_2k3des_PK(key_ext, &card_status, &exec_time);
-        else
-            status = uFR_int_DesfireFormatCard_3k3des_PK(key_ext, &card_status, &exec_time);
+		if(sam_key == true)
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_SAM_DesfireFormatCardAesAuth(key_nr, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_SAM_DesfireFormatCardDesAuth(key_nr, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_SAM_DesfireFormatCard2k3desAuth(key_nr, &card_status, &exec_time);
+            else
+                status = uFR_SAM_DesfireFormatCard3k3desAuth(key_nr, &card_status, &exec_time);
+        }
+		else
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_int_DesfireFormatCard_aes_PK(key_ext, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_int_DesfireFormatCard_des_PK(key_ext, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_int_DesfireFormatCard_2k3des_PK(key_ext, &card_status, &exec_time);
+            else
+                status = uFR_int_DesfireFormatCard_3k3des_PK(key_ext, &card_status, &exec_time);
+        }
 	}
 
 	if (status)
@@ -1106,7 +1213,9 @@ void SetRandomID()
 
 	if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -1129,14 +1238,28 @@ void SetRandomID()
     }
 	else
 	{
-		if(key_type_nr == AES_KEY_TYPE)
-            status = uFR_int_DesfireSetConfiguration_aes_PK(key_ext, 1, 0, &card_status, &exec_time);
-        else if(key_type_nr == DES_KEY_TYPE)
-            status = uFR_int_DesfireSetConfiguration_des_PK(key_ext, 1, 0, &card_status, &exec_time);
-        else if(key_type_nr == DES2K_KEY_TYPE)
-            status = uFR_int_DesfireSetConfiguration_2k3des_PK(key_ext, 1, 0, &card_status, &exec_time);
-        else
-            status = uFR_int_DesfireSetConfiguration_3k3des_PK(key_ext, 1, 0, &card_status, &exec_time);
+		if(sam_key == true)
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_SAM_DesfireSetConfigurationAesAuth(key_nr, 1, 0, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_SAM_DesfireSetConfigurationDesAuth(key_nr, 1, 0, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_SAM_DesfireSetConfiguration2k3desAuth(key_nr, 1, 0, &card_status, &exec_time);
+            else
+                status = uFR_SAM_DesfireSetConfiguration3k3desAuth(key_nr, 1, 0, &card_status, &exec_time);
+        }
+		else
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_int_DesfireSetConfiguration_aes_PK(key_ext, 1, 0, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_int_DesfireSetConfiguration_des_PK(key_ext, 1, 0, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_int_DesfireSetConfiguration_2k3des_PK(key_ext, 1, 0, &card_status, &exec_time);
+            else
+                status = uFR_int_DesfireSetConfiguration_3k3des_PK(key_ext, 1, 0, &card_status, &exec_time);
+        }
 	}
 
 	if (status)
@@ -1245,7 +1368,7 @@ void StoreKeyIntoReader()
     std::cout << " 3 - 3K3DES (24 bytes)" << std::endl;
     std::cout << " 4 - AES (16 bytes)" << std::endl;
 
-    scanf("%d", &choice);
+    scanf("%d%*c", &choice);
 
     switch(choice)
     {
@@ -1323,7 +1446,7 @@ void StoreKeyIntoReader()
 
     std::cout << "Input reader internal key number (0-15):" << std::endl;
 
-    scanf("%d", &key_no);
+    scanf("%d%*c", &key_no);
 
     status = uFR_int_DesfireWriteKey(key_no, key, key_type);
 
@@ -1436,7 +1559,7 @@ void ChangeKeySettings()
     std::cout << " 7 - Settings not changeable anymore, create or delete application with master key,";
     std::cout << " master key is not changeable anymore" << std::endl;
 
-    scanf("%d",&choice);
+    scanf("%d%*c",&choice);
 
     if(choice == 1)
     {
@@ -1503,7 +1626,9 @@ void ChangeKeySettings()
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -1526,14 +1651,28 @@ void ChangeKeySettings()
     }
     else
     {
-        if(key_type_nr == AES_KEY_TYPE)
-            status = uFR_int_DesfireChangeKeySettings_aes_PK(key_ext, aid, setting, &card_status, &exec_time);
-        else if(key_type_nr == DES_KEY_TYPE)
-            status = uFR_int_DesfireChangeKeySettings_des_PK(key_ext, aid, setting, &card_status, &exec_time);
-        else if(key_type_nr == DES2K_KEY_TYPE)
-            status = uFR_int_DesfireChangeKeySettings_2k3des_PK(key_ext, aid, setting, &card_status, &exec_time);
+        if(sam_key == true)
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_SAM_DesfireChangeKeySettingsAesAuth(key_nr, aid, setting, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_SAM_DesfireChangeKeySettingsDesAuth(key_nr, aid, setting, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_SAM_DesfireChangeKeySettings2k3desAuth(key_nr, aid, setting, &card_status, &exec_time);
+            else
+                status = uFR_SAM_DesfireChangeKeySettings3k3desAuth(key_nr, aid, setting, &card_status, &exec_time);
+        }
         else
-            status = uFR_int_DesfireChangeKeySettings_3k3des_PK(key_ext, aid, setting, &card_status, &exec_time);
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_int_DesfireChangeKeySettings_aes_PK(key_ext, aid, setting, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_int_DesfireChangeKeySettings_des_PK(key_ext, aid, setting, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_int_DesfireChangeKeySettings_2k3des_PK(key_ext, aid, setting, &card_status, &exec_time);
+            else
+                status = uFR_int_DesfireChangeKeySettings_3k3des_PK(key_ext, aid, setting, &card_status, &exec_time);
+        }
     }
 
     if (status)
@@ -1571,7 +1710,9 @@ void GetKeySettings()
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -1594,14 +1735,28 @@ void GetKeySettings()
 	}
 	else
 	{
-		if(key_type_nr == AES_KEY_TYPE)
-            status = uFR_int_DesfireGetKeySettings_aes_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
-        else if(key_type_nr == DES_KEY_TYPE)
-            status = uFR_int_DesfireGetKeySettings_des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
-        else if(key_type_nr == DES2K_KEY_TYPE)
-            status = uFR_int_DesfireGetKeySettings_2k3des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+		if(sam_key == true)
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_SAM_DesfireGetKeySettingsAesAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_SAM_DesfireGetKeySettingsDesAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_SAM_DesfireGetKeySettings2k3desAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+            else
+                status = uFR_SAM_DesfireGetKeySettings3k3desAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+        }
         else
-            status = uFR_int_DesfireGetKeySettings_3k3des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_int_DesfireGetKeySettings_aes_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_int_DesfireGetKeySettings_des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_int_DesfireGetKeySettings_2k3des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+            else
+                status = uFR_int_DesfireGetKeySettings_3k3des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+        }
 	}
 
 	if(status)
@@ -1742,7 +1897,7 @@ void ChangeKey()
         std::cout << " 4 - AES (16 bytes)" << std::endl;
 
         int choice;
-        scanf("%d",&choice);
+        scanf("%d%*c",&choice);
 
         switch(choice)
         {
@@ -1760,10 +1915,10 @@ void ChangeKey()
             break;
         }
 
-        if(internal_key)
+        if(internal_key || sam_key)
         {
             printf("Input new internal key number: ");
-            scanf("%d", &key_int);
+            scanf("%d%*c", &key_int);
             new_key_nr = key_int;
         }
         else
@@ -1825,15 +1980,15 @@ void ChangeKey()
         aid_key_nr_auth = stoul(settings[2],nullptr,10);
 
         printf("Input key number to change: ");
-        scanf("%d", &aid_key_nr);
+        scanf("%d%*c", &aid_key_nr);
 
         if(aid_key_nr != aid_key_nr_auth)
         {
             //different key enter old key
-            if(internal_key)
+            if(internal_key || sam_key)
             {
                 printf("Input old internal key number: ");
-                scanf("%d", &key_int);
+                scanf("%d%*c", &key_int);
                 old_key_nr = key_int;
             }
             else
@@ -1896,7 +2051,7 @@ void ChangeKey()
             std::cout << " 2 - 2K3DES (16 bytes)" << std::endl;
 
             int choice;
-            scanf("%d",&choice);
+            scanf("%d%*c",&choice);
 
             switch(choice)
             {
@@ -1911,10 +2066,10 @@ void ChangeKey()
         else
             new_key_type = key_type_nr;
 
-        if(internal_key)
+        if(internal_key || sam_key)
         {
             printf("Input new internal key number: ");
-            scanf("%d", &key_int);
+            scanf("%d%*c", &key_int);
             new_key_nr = key_int;
         }
         else
@@ -1971,7 +2126,9 @@ void ChangeKey()
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -2031,49 +2188,99 @@ void ChangeKey()
     }
 	else
 	{
-		if(key_type_nr == AES_KEY_TYPE)
+		if(sam_key == true)
         {
-            if(new_key_type == AES_KEY_TYPE)
-                status = uFR_int_DesfireChangeAesKey_aes_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
+            if(key_type_nr == AES_KEY_TYPE)
+            {
+                if(new_key_type == AES_KEY_TYPE)
+                    status = uFR_SAM_DesfireChangeAesKey_AesAuth(key_nr, aid, aid_key_nr_auth, new_key_nr, aid_key_nr, old_key_nr, &card_status, &exec_time);
+                else
+                {
+                    //master key
+                    status = uFR_SAM_DesfireChangeMasterKey(key_nr, AES_KEY_TYPE, new_key_nr, new_key_type, &card_status, &exec_time);
+                }
+            }
+            else if(key_type_nr == DES_KEY_TYPE)
+            {
+                if(new_key_type == DES_KEY_TYPE)
+                    status = uFR_SAM_DesfireChangeDesKey_DesAuth(key_nr, aid, aid_key_nr_auth, new_key_nr, aid_key_nr, old_key_nr, &card_status, &exec_time);
+                else if(new_key_type == DES2K_KEY_TYPE)
+                    status = uFR_SAM_DesfireChange2k3desKey_DesAuth(key_nr, aid, aid_key_nr_auth, new_key_nr, aid_key_nr, old_key_nr, &card_status, &exec_time);
+                else
+                {
+                    //master key
+                    status = uFR_SAM_DesfireChangeMasterKey(key_nr, DES_KEY_TYPE, new_key_nr, new_key_type, &card_status, &exec_time);
+                }
+            }
+            else if(key_type_nr == DES2K_KEY_TYPE)
+            {
+                if(new_key_type == DES2K_KEY_TYPE)
+                    status = uFR_SAM_DesfireChange2k3desKey_2k3desAuth(key_nr, aid, aid_key_nr_auth, new_key_nr, aid_key_nr, old_key_nr, &card_status, &exec_time);
+                else if(new_key_type == DES_KEY_TYPE)
+                    status = uFR_SAM_DesfireChangeDesKey_2k3desAuth(key_nr, aid, aid_key_nr_auth, new_key_nr, aid_key_nr, old_key_nr, &card_status, &exec_time);
+                else
+                {
+                    //master key
+                    status = uFR_SAM_DesfireChangeMasterKey(key_nr, DES2K_KEY_TYPE, new_key_nr, new_key_type, &card_status, &exec_time);
+                }
+            }
             else
             {
-                //master key
-                status = uFR_int_DesfireChangeMasterKey_PK(key_ext, AES_KEY_TYPE, new_key, new_key_type, &card_status, &exec_time);
+                if(new_key_type == DES3K_KEY_TYPE)
+                    status = uFR_SAM_DesfireChange3k3desKey_3k3desAuth(key_nr, aid, aid_key_nr_auth, new_key_nr, aid_key_nr, old_key_nr, &card_status, &exec_time);
+                else
+                {
+                    //master key
+                    status = uFR_SAM_DesfireChangeMasterKey(key_nr, DES3K_KEY_TYPE, new_key_nr, new_key_type, &card_status, &exec_time);
+                }
             }
         }
-        else if(key_type_nr == DES_KEY_TYPE)
+		else
         {
-            if(new_key_type == DES_KEY_TYPE)
-                status = uFR_int_DesfireChangeDesKey_des_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
-            else if(new_key_type == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireChange2K3DesKey_des_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
-            else
+            if(key_type_nr == AES_KEY_TYPE)
             {
-                //master key
-                status = uFR_int_DesfireChangeMasterKey_PK(key_ext, DES_KEY_TYPE, new_key, new_key_type, &card_status, &exec_time);
+                if(new_key_type == AES_KEY_TYPE)
+                    status = uFR_int_DesfireChangeAesKey_aes_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
+                else
+                {
+                    //master key
+                    status = uFR_int_DesfireChangeMasterKey_PK(key_ext, AES_KEY_TYPE, new_key, new_key_type, &card_status, &exec_time);
+                }
             }
-        }
+            else if(key_type_nr == DES_KEY_TYPE)
+            {
+                if(new_key_type == DES_KEY_TYPE)
+                    status = uFR_int_DesfireChangeDesKey_des_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
+                else if(new_key_type == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireChange2K3DesKey_des_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
+                else
+                {
+                    //master key
+                    status = uFR_int_DesfireChangeMasterKey_PK(key_ext, DES_KEY_TYPE, new_key, new_key_type, &card_status, &exec_time);
+                }
+            }
 
-        else if(key_type_nr == DES2K_KEY_TYPE)
-        {
-            if(new_key_type == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireChange2K3DesKey_2k3des_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
-            else if(new_key_type == DES_KEY_TYPE)
-                status = uFR_int_DesfireChangeDesKey_2k3des_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
-            else
+            else if(key_type_nr == DES2K_KEY_TYPE)
             {
-                //master key
-                status = uFR_int_DesfireChangeMasterKey_PK(key_ext, DES2K_KEY_TYPE, new_key, new_key_type, &card_status, &exec_time);
+                if(new_key_type == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireChange2K3DesKey_2k3des_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
+                else if(new_key_type == DES_KEY_TYPE)
+                    status = uFR_int_DesfireChangeDesKey_2k3des_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
+                else
+                {
+                    //master key
+                    status = uFR_int_DesfireChangeMasterKey_PK(key_ext, DES2K_KEY_TYPE, new_key, new_key_type, &card_status, &exec_time);
+                }
             }
-        }
-        else
-        {
-            if(new_key_type == DES3K_KEY_TYPE)
-                status = uFR_int_DesfireChange3K3DesKey_3k3des_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
             else
             {
-                //master key
-                status = uFR_int_DesfireChangeMasterKey_PK(key_ext, DES3K_KEY_TYPE, new_key, new_key_type, &card_status, &exec_time);
+                if(new_key_type == DES3K_KEY_TYPE)
+                    status = uFR_int_DesfireChange3K3DesKey_3k3des_PK(key_ext, aid, aid_key_nr_auth, new_key, aid_key_nr, old_key, &card_status, &exec_time);
+                else
+                {
+                    //master key
+                    status = uFR_int_DesfireChangeMasterKey_PK(key_ext, DES3K_KEY_TYPE, new_key, new_key_type, &card_status, &exec_time);
+                }
             }
         }
 	}
@@ -2119,7 +2326,7 @@ void MakeApplication()
 	std::cout << " 2 - 3K3DES" << std::endl;
 	std::cout << " 3 - AES" << std::endl;
 
-	scanf("%d",&choice);
+	scanf("%d%*c",&choice);
 
 	switch(choice)
 	{
@@ -2141,7 +2348,7 @@ void MakeApplication()
 
     std::cout << std::endl;
     printf("Input maximal key number: (1 - 14)");
-    scanf("%d", &max_key_no);
+    scanf("%d%*c", &max_key_no);
 
     std::cout << " Choose application master key settings:" << std::endl;
     std::cout << " 0 - No settings" << std::endl;
@@ -2154,7 +2361,7 @@ void MakeApplication()
     std::cout << " 7 - Settings not changeable anymore, create or delete file with master key,";
     std::cout << " master key is not changeable anymore" << std::endl;
 
-    scanf("%d",&choice);
+    scanf("%d%*c",&choice);
 
     if(choice == 1)
     {
@@ -2219,7 +2426,9 @@ void MakeApplication()
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -2272,41 +2481,83 @@ void MakeApplication()
         }
         else
         {
-            if(key_type_nr == AES_KEY_TYPE)
+            if(sam_key == true)
             {
-                if(application_type == DES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateDesApplication_aes_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
-                else if(application_type == DES3K_KEY_TYPE)
-                    status = uFR_int_DesfireCreate3k3desApplication_aes_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                if(key_type_nr == AES_KEY_TYPE)
+                {
+                    if(application_type == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateDesApplicationAesAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                    else if(application_type == DES3K_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreate3k3desApplicationAesAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireCreateAesApplicationAesAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                }
+                else if(key_type_nr == DES_KEY_TYPE)
+                {
+                    if(application_type == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateDesApplicationDesAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                    else if(application_type == DES3K_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreate3k3desApplicationDesAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireCreateAesApplicationDesAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                }
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                {
+                    if(application_type == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateDesApplication2k3desAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                    else if(application_type == DES3K_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreate3k3desApplication2k3desAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireCreateAesApplication2k3desAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireCreateAesApplication_aes_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
-            }
-            else if(key_type_nr == DES_KEY_TYPE)
-            {
-                if(application_type == DES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateDesApplication_des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
-                else if(application_type == DES3K_KEY_TYPE)
-                    status = uFR_int_DesfireCreate3k3desApplication_des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
-                else
-                    status = uFR_int_DesfireCreateAesApplication_des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
-            }
-            else if(key_type_nr == DES2K_KEY_TYPE)
-            {
-                if(application_type == DES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateDesApplication_2k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
-                else if(application_type == DES3K_KEY_TYPE)
-                    status = uFR_int_DesfireCreate3k3desApplication_2k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
-                else
-                    status = uFR_int_DesfireCreateAesApplication_2k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                {
+                    if(application_type == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateDesApplication3k3desAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                    else if(application_type == DES3K_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreate3k3desApplication3k3desAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireCreateAesApplication3k3desAuth(key_nr, aid, setting, max_key_no, &card_status, &exec_time);
+                }
             }
             else
             {
-                if(application_type == DES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateDesApplication_3k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
-                else if(application_type == DES3K_KEY_TYPE)
-                    status = uFR_int_DesfireCreate3k3desApplication_3k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                if(key_type_nr == AES_KEY_TYPE)
+                {
+                    if(application_type == DES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateDesApplication_aes_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                    else if(application_type == DES3K_KEY_TYPE)
+                        status = uFR_int_DesfireCreate3k3desApplication_aes_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireCreateAesApplication_aes_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                }
+                else if(key_type_nr == DES_KEY_TYPE)
+                {
+                    if(application_type == DES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateDesApplication_des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                    else if(application_type == DES3K_KEY_TYPE)
+                        status = uFR_int_DesfireCreate3k3desApplication_des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireCreateAesApplication_des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                }
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                {
+                    if(application_type == DES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateDesApplication_2k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                    else if(application_type == DES3K_KEY_TYPE)
+                        status = uFR_int_DesfireCreate3k3desApplication_2k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireCreateAesApplication_2k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireCreateAesApplication_3k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                {
+                    if(application_type == DES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateDesApplication_3k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                    else if(application_type == DES3K_KEY_TYPE)
+                        status = uFR_int_DesfireCreate3k3desApplication_3k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireCreateAesApplication_3k3des_PK(key_ext, aid, setting, max_key_no, &card_status, &exec_time);
+                }
             }
         }
     }
@@ -2357,7 +2608,9 @@ void DeleteApplication()
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -2380,14 +2633,28 @@ void DeleteApplication()
     }
     else
     {
-        if(key_type_nr == AES_KEY_TYPE)
-            status = uFR_int_DesfireDeleteApplication_aes_PK(key_ext, aid, &card_status, &exec_time);
-        else if(key_type_nr == DES_KEY_TYPE)
-            status = uFR_int_DesfireDeleteApplication_des_PK(key_ext, aid, &card_status, &exec_time);
-        else if(key_type_nr == DES2K_KEY_TYPE)
-            status = uFR_int_DesfireDeleteApplication_2k3des_PK(key_ext, aid, &card_status, &exec_time);
+        if(sam_key == true)
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_SAM_DesfireDeleteApplicationAesAuth(key_nr, aid, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_SAM_DesfireDeleteApplicationDesAuth(key_nr, aid, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_SAM_DesfireDeleteApplication2k3desAuth(key_nr, aid, &card_status, &exec_time);
+            else
+                status = uFR_SAM_DesfireDeleteApplication3k3desAuth(key_nr, aid, &card_status, &exec_time);
+        }
         else
-            status = uFR_int_DesfireDeleteApplication_3k3des_PK(key_ext, aid, &card_status, &exec_time);
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_int_DesfireDeleteApplication_aes_PK(key_ext, aid, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_int_DesfireDeleteApplication_des_PK(key_ext, aid, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_int_DesfireDeleteApplication_2k3des_PK(key_ext, aid, &card_status, &exec_time);
+            else
+                status = uFR_int_DesfireDeleteApplication_3k3des_PK(key_ext, aid, &card_status, &exec_time);
+        }
     }
 
     if (status)
@@ -2431,26 +2698,26 @@ void MakeFile(){
     aid = strtol(settings[1].c_str(), NULL,16);
 
     printf("Input File ID: ");
-    scanf("%d", &file_id);
+    scanf("%d%*c", &file_id);
 
 
     printf("Choose communication mode:\n 1 - PLAIN.\n 2 - MACKED.\n 3 - ENCIPHERED.\n");
-    scanf("%d", &comm_choice);
+    scanf("%d%*c", &comm_choice);
 
     printf("Choose file type:\n 1 - Standard data file\n 2 - Value file\n 3 - Linear record file\n 4 - Cyclic record file\n");
-    scanf("%d", &file_choice);
+    scanf("%d%*c", &file_choice);
 
     printf("Enter Read key number: ");
-    scanf("%d", &read_key_nr);
+    scanf("%d%*c", &read_key_nr);
 
     printf("Enter Write key number: ");
-    scanf("%d", &write_key_nr);
+    scanf("%d%*c", &write_key_nr);
 
     printf("Enter Read/Write key number: ");
-    scanf("%d", &read_write_key_nr);
+    scanf("%d%*c", &read_write_key_nr);
 
     printf("Enter Change key number: ");
-    scanf("%d", &change_key_nr);
+    scanf("%d%*c", &change_key_nr);
 
     switch (comm_choice)
 	{
@@ -2470,7 +2737,9 @@ void MakeFile(){
 
 	if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -2482,24 +2751,24 @@ void MakeFile(){
     if (file_choice == 1)
     {
         printf("Enter size of the file you wish to create: ");
-        scanf("%d", &file_size);
+        scanf("%d%*c", &file_size);
     }
     else if (file_choice == 2)
     {
         printf("Enter lower limit of your Value file: ");
-        scanf("%d", &lower_limit);
+        scanf("%d%*c", &lower_limit);
 
 
         printf("Enter upper limit of your Value file: ");
-        scanf("%d", &upper_limit);
+        scanf("%d%*c", &upper_limit);
 
 
         printf("Enter value of your Value file: ");
-        scanf("%d",&value_value);
+        scanf("%d%*c",&value_value);
 
 
         printf("Do you wish to enable Limited credit?\n 1 - Yes\n 2 - No\n");
-        scanf("%d",&limited_credit_choice);
+        scanf("%d%*c",&limited_credit_choice);
 
         if (limited_credit_choice == 1)
                 limited_credit_enabled = 1;
@@ -2507,7 +2776,7 @@ void MakeFile(){
                 limited_credit_enabled = 0;
 
         printf("Do you wish to enable Free get value?\n 1 - Yes\n 2 - No\n");
-        scanf("%d",&free_get_choice);
+        scanf("%d%*c",&free_get_choice);
         if (free_get_choice == 1)
             limited_credit_enabled |= 0x02;
         else if (free_get_choice == 2) {} //nothing happens
@@ -2515,10 +2784,10 @@ void MakeFile(){
     else if(file_choice == 3 || file_choice == 4)
     {
         printf("Enter size of record: ");
-        scanf("%d", &record_size);
+        scanf("%d%*c", &record_size);
 
         printf("Enter maximal number of records: ");
-        scanf("%d", &max_rec_nr);
+        scanf("%d%*c", &max_rec_nr);
     }
 
     if (master_authent_req == true)
@@ -2600,77 +2869,155 @@ void MakeFile(){
         }
         else
         {
-            if (file_choice == 1)
+            if(sam_key == true)
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateStdDataFile_aes_PK(key_ext, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateStdDataFile_des_PK(key_ext, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireCreateStdDataFile_2k3des_PK(key_ext, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
+                if (file_choice == 1)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateStdDataFileAesAuth(key_nr, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateStdDataFileDesAuth(key_nr, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateStdDataFile2k3desAuth(key_nr, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireCreateStdDataFile3k3desAuth(key_nr, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
+                }
+                else if(file_choice == 2)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateValueFileAesAuth(key_nr, aid, file_id,
+                                 lower_limit, upper_limit, value_value, limited_credit_enabled,
+                                 read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                 communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateValueFileDesAuth(key_nr, aid, file_id,
+                                 lower_limit, upper_limit, value_value, limited_credit_enabled,
+                                 read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                 communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateValueFile2k3desAuth(key_nr, aid, file_id,
+                                 lower_limit, upper_limit, value_value, limited_credit_enabled,
+                                 read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                 communication_settings, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireCreateValueFile3k3desAuth(key_nr, aid, file_id,
+                                 lower_limit, upper_limit, value_value, limited_credit_enabled,
+                                 read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                 communication_settings, &card_status, &exec_time);
+                }
+                else if(file_choice == 3)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateLinearRecordFileAesAuth(key_nr, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateLinearRecordFileDesAuth(key_nr, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateLinearRecordFile2k3desAuth(key_nr, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireCreateLinearRecordFile3k3desAuth(key_nr, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireCreateStdDataFile_3k3des_PK(key_ext, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
-            }
-            else if (file_choice == 2)
-            {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateValueFile_aes_PK(key_ext, aid, file_id,
-                             lower_limit, upper_limit, value_value, limited_credit_enabled,
-                             read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                             communication_settings, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateValueFile_des_PK(key_ext, aid, file_id,
-                             lower_limit, upper_limit, value_value, limited_credit_enabled,
-                             read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                             communication_settings, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireCreateValueFile_2k3des_PK(key_ext, aid, file_id,
-                             lower_limit, upper_limit, value_value, limited_credit_enabled,
-                             read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                             communication_settings, &card_status, &exec_time);
-                else
-                    status = uFR_int_DesfireCreateValueFile_3k3des_PK(key_ext, aid, file_id,
-                             lower_limit, upper_limit, value_value, limited_credit_enabled,
-                             read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                             communication_settings, &card_status, &exec_time);
-            }
-            else if (file_choice == 3)
-            {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateLinearRecordFile_aes_PK(key_ext, aid, file_id, record_size, max_rec_nr,
-                                                    read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                                                    communication_settings, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateLinearRecordFile_des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
-                                                    read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                                                    communication_settings, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireCreateLinearRecordFile_2k3des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
-                                                    read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                                                    communication_settings, &card_status, &exec_time);
-                else
-                    status = uFR_int_DesfireCreateLinearRecordFile_3k3des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
-                                                    read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                                                    communication_settings, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateCyclicRecordFileAesAuth(key_nr, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateCyclicRecordFileDesAuth(key_nr, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateCyclicRecordFile2k3desAuth(key_nr, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireCreateCyclicRecordFile3k3desAuth(key_nr, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                }
             }
             else
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateCyclicRecordFile_aes_PK(key_ext, aid, file_id, record_size, max_rec_nr,
-                                                    read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                                                    communication_settings, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireCreateCyclicRecordFile_des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
-                                                    read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                                                    communication_settings, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireCreateCyclicRecordFile_2k3des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
-                                                    read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                                                    communication_settings, &card_status, &exec_time);
+                if (file_choice == 1)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateStdDataFile_aes_PK(key_ext, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateStdDataFile_des_PK(key_ext, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireCreateStdDataFile_2k3des_PK(key_ext, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireCreateStdDataFile_3k3des_PK(key_ext, aid, file_id, file_size,read_key_nr,write_key_nr, read_write_key_nr, change_key_nr, communication_settings, &card_status, &exec_time);
+                }
+                else if (file_choice == 2)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateValueFile_aes_PK(key_ext, aid, file_id,
+                                 lower_limit, upper_limit, value_value, limited_credit_enabled,
+                                 read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                 communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateValueFile_des_PK(key_ext, aid, file_id,
+                                 lower_limit, upper_limit, value_value, limited_credit_enabled,
+                                 read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                 communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireCreateValueFile_2k3des_PK(key_ext, aid, file_id,
+                                 lower_limit, upper_limit, value_value, limited_credit_enabled,
+                                 read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                 communication_settings, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireCreateValueFile_3k3des_PK(key_ext, aid, file_id,
+                                 lower_limit, upper_limit, value_value, limited_credit_enabled,
+                                 read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                 communication_settings, &card_status, &exec_time);
+                }
+                else if (file_choice == 3)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateLinearRecordFile_aes_PK(key_ext, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateLinearRecordFile_des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireCreateLinearRecordFile_2k3des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireCreateLinearRecordFile_3k3des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireCreateCyclicRecordFile_3k3des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
-                                                    read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
-                                                    communication_settings, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateCyclicRecordFile_aes_PK(key_ext, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateCyclicRecordFile_des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireCreateCyclicRecordFile_2k3des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireCreateCyclicRecordFile_3k3des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
+                                                        read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
+                                                        communication_settings, &card_status, &exec_time);
+                }
             }
         }
     }
@@ -2721,11 +3068,13 @@ void DeleteFile()
 	unsigned long aid;
 
 	printf("Enter file ID to delete: \n");
-	scanf("%d", &file_no);
+	scanf("%d%*c", &file_no);
 
 	if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
            {
                return;
            }
@@ -2752,14 +3101,28 @@ void DeleteFile()
 		}
 		else
 		{
-			if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_int_DesfireDeleteFile_aes_PK(key_ext, aid, file_no, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_int_DesfireDeleteFile_des_PK(key_ext, aid, file_no, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireDeleteFile_2k3des_PK(key_ext, aid, file_no, &card_status, &exec_time);
+			if(sam_key == true)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_SAM_DesfireDeleteFileAesAuth(key_nr, aid, file_no, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_SAM_DesfireDeleteFileDesAuth(key_nr, aid, file_no, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_SAM_DesfireDeleteFile2k3desAuth(key_nr, aid, file_no, &card_status, &exec_time);
+                else
+                    status = uFR_SAM_DesfireDeleteFile3k3desAuth(key_nr, aid, file_no, &card_status, &exec_time);
+            }
             else
-                status = uFR_int_DesfireDeleteFile_3k3des_PK(key_ext, aid, file_no, &card_status, &exec_time);
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireDeleteFile_aes_PK(key_ext, aid, file_no, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireDeleteFile_des_PK(key_ext, aid, file_no, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireDeleteFile_2k3des_PK(key_ext, aid, file_no, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireDeleteFile_3k3des_PK(key_ext, aid, file_no, &card_status, &exec_time);
+            }
 		}
 	}
 	else
@@ -2800,7 +3163,9 @@ void ReadValueFile()
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -2816,7 +3181,7 @@ void ReadValueFile()
      file_id = stoul(settings[3], nullptr, 10);
 
     printf("\nChoose communication mode:\n 1 - PLAIN.\n 2 - MACKED.\n 3 - ENCIPHERED.\n");
-    scanf("%d", &comm_choice);
+    scanf("%d%*c", &comm_choice);
     switch (comm_choice)
 	{
 	case 1:
@@ -2853,18 +3218,36 @@ void ReadValueFile()
 		}
 		else
 		{
-			if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_int_DesfireReadValueFile_aes_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, &file_value, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_int_DesfireReadValueFile_des_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, &file_value, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireReadValueFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, &file_value, &card_status, &exec_time);
+			if(sam_key == true)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status =  uFR_SAM_DesfireReadValueFileAesAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, &file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status =  uFR_SAM_DesfireReadValueFileDesAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, &file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status =  uFR_SAM_DesfireReadValueFile2k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, &file_value, &card_status, &exec_time);
+                else
+                    status =  uFR_SAM_DesfireReadValueFile3k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, &file_value, &card_status, &exec_time);
+            }
             else
-                status = uFR_int_DesfireReadValueFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, &file_value, &card_status, &exec_time);
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireReadValueFile_aes_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, &file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireReadValueFile_des_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, &file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireReadValueFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, &file_value, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireReadValueFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, &file_value, &card_status, &exec_time);
+            }
 		}
 	}
 	else
@@ -2908,7 +3291,9 @@ void IncreaseValueFile()
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -2924,7 +3309,7 @@ void IncreaseValueFile()
      file_id = stoul(settings[3], nullptr, 10);
 
     printf("\nChoose communication mode:\n 1 - PLAIN.\n 2 - MACKED.\n 3 - ENCIPHERED.\n");
-    scanf("%d", &comm_choice);
+    scanf("%d%*c", &comm_choice);
     switch (comm_choice)
 	{
 	case 1:
@@ -2942,7 +3327,7 @@ void IncreaseValueFile()
 	}
 
 	printf("\nValue for increasing: \n");
-    scanf("%d", &file_value);
+    scanf("%d%*c", &file_value);
 
 
 	if (master_authent_req == true)
@@ -2964,18 +3349,36 @@ void IncreaseValueFile()
 		}
 		else
 		{
-			if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_int_DesfireIncreaseValueFile_aes_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_int_DesfireIncreaseValueFile_des_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireIncreaseValueFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
-            else
-                status = uFR_int_DesfireIncreaseValueFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
+			if(sam_key == true)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status =  uFR_SAM_DesfireIncreaseValueFileAesAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status =  uFR_SAM_DesfireIncreaseValueFileDesAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status =  uFR_SAM_DesfireIncreaseValueFile2k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else
+                    status =  uFR_SAM_DesfireIncreaseValueFile3k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+            }
+			else
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireIncreaseValueFile_aes_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireIncreaseValueFile_des_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireIncreaseValueFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireIncreaseValueFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+            }
 		}
 	}
 	else
@@ -3020,7 +3423,9 @@ void DecreaseValueFile()
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -3036,7 +3441,7 @@ void DecreaseValueFile()
      file_id = stoul(settings[3], nullptr, 10);
 
     printf("\nChoose communication mode:\n 1 - PLAIN.\n 2 - MACKED.\n 3 - ENCIPHERED.\n");
-    scanf("%d", &comm_choice);
+    scanf("%d%*c", &comm_choice);
     switch (comm_choice)
 	{
 	case 1:
@@ -3054,7 +3459,7 @@ void DecreaseValueFile()
 	}
 
 	printf("\nValue for decreasing: \n");
-    scanf("%d", &file_value);
+    scanf("%d%*c", &file_value);
 
 
 	if (master_authent_req == true)
@@ -3076,18 +3481,37 @@ void DecreaseValueFile()
 		}
 		else
 		{
-			if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_int_DesfireDecreaseValueFile_aes_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_int_DesfireDecreaseValueFile_des_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireDecreaseValueFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
-            else
-                status = uFR_int_DesfireDecreaseValueFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
+			if(sam_key == true)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status =  uFR_SAM_DesfireDecreaseValueFileAesAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status =  uFR_SAM_DesfireDecreaseValueFileDesAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status =  uFR_SAM_DesfireDecreaseValueFile2k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else
+                    status =  uFR_SAM_DesfireDecreaseValueFile3k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+            }
+			else
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireDecreaseValueFile_aes_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireDecreaseValueFile_des_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireDecreaseValueFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireDecreaseValueFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+            }
+
 		}
 	}
 	else
@@ -3148,10 +3572,10 @@ void WriteStdFile()
 	fseek(stream, curpos, SEEK_SET);
 
 	printf("\nChoose file type:\n 1 - Standard data file\n 2 - Record file\n");
-	scanf("%d", &file_type);
+	scanf("%d%*c", &file_type);
 
 	printf("\nChoose communication mode:\n 1 - PLAIN.\n 2 - MACKED.\n 3 - ENCIPHERED.\n");
-    scanf("%d", &comm_choice);
+    scanf("%d%*c", &comm_choice);
     switch (comm_choice)
 	{
 	case 1:
@@ -3178,7 +3602,9 @@ void WriteStdFile()
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -3221,27 +3647,55 @@ void WriteStdFile()
 		}
 		else
 		{
-			if(file_type == 1)
+			if(sam_key == true)
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireWriteStdDataFile_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireWriteStdDataFile_des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireWriteStdDataFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                if(file_type == 1)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireWriteStdDataFileAesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireWriteStdDataFileDesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireWriteStdDataFile2k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireWriteStdDataFile3k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireWriteStdDataFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireWriteRecordAesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireWriteRecordDesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireWriteRecord2k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireWriteRecord3k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                }
             }
             else
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireWriteRecord_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireWriteRecord_des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireWriteRecord_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                if(file_type == 1)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireWriteStdDataFile_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireWriteStdDataFile_des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireWriteStdDataFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireWriteStdDataFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireWriteRecord_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireWriteRecord_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireWriteRecord_des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireWriteRecord_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireWriteRecord_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                }
             }
 		}
     }
@@ -3294,25 +3748,25 @@ void ReadStdFile()
 	stream = fopen("read.txt", "wb");
 
 	printf("\nChoose file type:\n 1 - Standard data file\n 2 - Record file\n");
-	scanf("%d", &file_type);
+	scanf("%d%*c", &file_type);
 
 	if(file_type == 1)
     {
         printf("Input file length to read: ");
-        scanf("%d", &file_length);
+        scanf("%d%*c", &file_length);
     }
     else
     {
         printf("Enter record size: ");
-        scanf("%d", &record_len);
+        scanf("%d%*c", &record_len);
 
         printf("Enter number of records: ");
-        scanf("%d", &rec_nr);
+        scanf("%d%*c", &rec_nr);
     }
 
 
 	printf("\nChoose communication mode:\n 1 - PLAIN.\n 2 - MACKED.\n 3 - ENCIPHERED.\n");
-    scanf("%d", &comm_choice);
+    scanf("%d%*c", &comm_choice);
     switch (comm_choice)
 	{
 	case 1:
@@ -3337,7 +3791,9 @@ void ReadStdFile()
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -3377,27 +3833,55 @@ void ReadStdFile()
 		}
 		else
 		{
-			if(file_type == 1)
+			if(sam_key == true)
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireReadStdDataFile_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireReadStdDataFile_des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireReadStdDataFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                if(file_type == 1)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireReadStdDataFileAesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireReadStdDataFileDesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireReadStdDataFile2k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireReadStdDataFile3k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireReadStdDataFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireReadRecordsAesAuth(key_nr, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireReadRecordsDesAuth(key_nr, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireReadRecords2k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireReadRecords3k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
+                }
             }
-			else
+            else
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireReadRecords_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireReadRecords_des_PK(key_ext, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireReadRecords_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
+                if(file_type == 1)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireReadStdDataFile_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireReadStdDataFile_des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireReadStdDataFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireReadStdDataFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireReadRecords_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireReadRecords_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireReadRecords_des_PK(key_ext, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireReadRecords_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireReadRecords_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, rec_nr, record_len, communication_settings, file_data, &card_status, &exec_time);
+                }
             }
 		}
 	}
@@ -3499,7 +3983,7 @@ void ChangeSettings()
                 std::cout << " 4 - AES (16 bytes)" << std::endl;
 
                 int choice;
-                scanf("%d",&choice);
+                scanf("%d%*c",&choice);
 
                 switch(choice)
                 {
@@ -3590,13 +4074,8 @@ void ChangeSettings()
                 break;
 
             case '5':
-                std::cout << "Input new internal key number (0-15)" << std::endl;
+                std::cout << "Input new internal key number (0-15) for SAM (0 - 127)" << std::endl;
                 std::cin >> new_internal_key_nr;
-                if (stoul(new_internal_key_nr,nullptr,10) > 15 || stoul(new_internal_key_nr,nullptr,10) < 0)
-                {
-                    std::cout << "Internal key number must be between 0 and 15" << std::endl;
-                    return;
-                }
                 settings[4] = new_internal_key_nr;
                 print_settings();
                 break;
@@ -3655,7 +4134,9 @@ void GetApplicationIds(void)
 
 	if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
        {
            return;
        }
@@ -3680,14 +4161,28 @@ void GetApplicationIds(void)
         }
         else
         {
-            if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_int_DesfireGetApplicationIds_aes_PK(key_ext, app_ids, &app_ids_nr, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_int_DesfireGetApplicationIds_des_PK(key_ext, app_ids, &app_ids_nr, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireGetApplicationIds_2k3des_PK(key_ext, app_ids, &app_ids_nr, &card_status, &exec_time);
+            if(sam_key == true)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_SAM_DesfireGetApplicationIdsAesAuth(key_nr, app_ids, &app_ids_nr, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_SAM_DesfireGetApplicationIdsDesAuth(key_nr, app_ids, &app_ids_nr, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_SAM_DesfireGetApplicationIds2k3desAuth(key_nr, app_ids, &app_ids_nr, &card_status, &exec_time);
+                else
+                    status = uFR_SAM_DesfireGetApplicationIds3k3desAuth(key_nr, app_ids, &app_ids_nr, &card_status, &exec_time);
+            }
             else
-                status = uFR_int_DesfireGetApplicationIds_3k3des_PK(key_ext, app_ids, &app_ids_nr, &card_status, &exec_time);
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireGetApplicationIds_aes_PK(key_ext, app_ids, &app_ids_nr, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireGetApplicationIds_des_PK(key_ext, app_ids, &app_ids_nr, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireGetApplicationIds_2k3des_PK(key_ext, app_ids, &app_ids_nr, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireGetApplicationIds_3k3des_PK(key_ext, app_ids, &app_ids_nr, &card_status, &exec_time);
+            }
         }
     }
     else
@@ -3731,7 +4226,9 @@ void ClearRecord(void)
 
     if (internal_key == false)
     {
-        if(!prepare_key(key_ext))
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
         {
             return;
         }
@@ -3757,14 +4254,28 @@ void ClearRecord(void)
         }
         else
         {
-            if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_int_DesfireClearRecordFile_aes_PK(key_ext, aid, file_id, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_int_DesfireClearRecordFile_des_PK(key_ext, aid, file_id, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireClearRecordFile_2k3des_PK(key_ext, aid, file_id, &card_status, &exec_time);
+            if(sam_key == true)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_SAM_DesfireClearRecordFileAesAuth(key_nr, aid, file_id, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_SAM_DesfireClearRecordFileDesAuth(key_nr, aid, file_id, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_SAM_DesfireClearRecordFile2k3desAuth(key_nr, aid, file_id, &card_status, &exec_time);
+                else
+                    status = uFR_SAM_DesfireClearRecordFile3k3desAuth(key_nr, aid, file_id, &card_status, &exec_time);
+            }
             else
-                status = uFR_int_DesfireClearRecordFile_3k3des_PK(key_ext, aid, file_id, &card_status, &exec_time);
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireClearRecordFile_aes_PK(key_ext, aid, file_id, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireClearRecordFile_des_PK(key_ext, aid, file_id, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireClearRecordFile_2k3des_PK(key_ext, aid, file_id, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireClearRecordFile_3k3des_PK(key_ext, aid, file_id, &card_status, &exec_time);
+            }
         }
     }
     else
@@ -3787,6 +4298,151 @@ void ClearRecord(void)
 
     if(card_status == CARD_OPERATION_OK)
         std::cout << "All records deleted" << std::endl;
+}
 
+void SamStoreKey(void)
+{
+    UFR_STATUS status;
+    int key_no_int, key_ver_int;
+    unsigned char key_no;
+    std::string key_str;
+    unsigned char key_a[24];
+    unsigned char master_key[16], master_key_ver;
+    unsigned char apdu_sw[2];
+    unsigned char auth_key_no;
+    unsigned char key_type_nr;
+    unsigned char atr_data[50];
+    unsigned char len = 50;
 
+    if(!sam_key)
+    {
+        status = open_ISO7816_interface(atr_data, &len);
+        if(status == UFR_OK)
+        {
+            std::cout << " SAM is opened\n";
+            sam_key = true;
+        }
+        else
+        {
+            std::cout << " SAM did not opened\n";
+            return;
+        }
+    }
+
+    std::cout << " Enter key type " << std::endl;
+    std::cout << " 1 - DES (8 bytes)" << std::endl;
+    std::cout << " 2 - 2K3DES (16 bytes)" << std::endl;
+    std::cout << " 3 - 3K3DES (24 bytes)" << std::endl;
+    std::cout << " 4 - AES (16 bytes)" << std::endl;
+
+    int choice;
+    scanf("%d%*c",&choice);
+
+    switch(choice)
+    {
+    case 1:
+        std::cout << "Input new DES key (8 bytes):" << std::endl;
+        std::cin >> key_str;
+        if (key_str.length() != 16)
+        {
+            std::cout << "DES key must be 8 bytes long" << std::endl;
+            return;
+        }
+        key_type_nr = DES_KEY_TYPE;
+        break;
+    case 2:
+        std::cout << "Input new 2K3DES key (16 bytes):" << std::endl;
+        std::cin >> key_str;
+        if (key_str.length() != 32)
+        {
+            std::cout << "2K3DES key must be 16 bytes long" << std::endl;
+            return;
+        }
+        key_type_nr = DES2K_KEY_TYPE;
+        break;
+    case 3:
+        std::cout << "Input new 3K3DES key (24 bytes):" << std::endl;
+        std::cin >> key_str;
+        if (key_str.length() != 48)
+        {
+            std::cout << "3K3DES key must be 24 bytes long" << std::endl;
+            return;
+        }
+        key_type_nr = DES3K_KEY_TYPE;
+        break;
+    case 4:
+        std::cout << "Input new AES key (16 bytes):" << std::endl;
+        std::cin >> key_str;
+        if (key_str.length() != 32)
+        {
+            std::cout << "aes key must be 16 bytes long" << std::endl;
+            return;
+        }
+        key_type_nr = AES_KEY_TYPE;
+        break;
+    default:
+        std::cout << "wrong choice" << std::endl;
+        return;
+        break;
+    }
+
+    Convert(key_str, key_a);
+
+    std::cout << "Enter SAM ordinal key number (1 - 127):" << std::endl;
+    scanf("%d%*c", &key_no_int);
+    key_no = key_no_int & 0xFF;
+
+    std::cout << "Enter SAM key for host authentication ordinal number: " << std::endl;
+    scanf("%d%*c", &key_no_int);
+    auth_key_no = key_no_int & 0x7F;
+    std::cout << "Enter version of host authentication key (0 - 255):" << std::endl;
+    scanf("%d%*c", &key_ver_int);
+    master_key_ver = key_ver_int & 0xFF;
+    std::cout << "Enter host authentication key:" << std::endl;
+    std::cout << "Enter AES key (16 bytes):" << std::endl;
+    std::cin >> key_str;
+    if (key_str.length() != 32)
+    {
+        std::cout << "aes key must be 16 bytes long" << std::endl;
+        return;
+    }
+    Convert(key_str, master_key);
+
+    status = SAM_authenticate_host_AV2_plain(master_key, auth_key_no, master_key_ver, apdu_sw);
+
+    if (status)
+    {
+        std::cout << std::endl << "Host authentication error";
+        std::cout << std::endl << "SAM_authenticate_host_AV2(): " << UFR_Status2String(status) << std::endl;
+        printf("APDU status %X %X\n", apdu_sw[0], apdu_sw[1]);
+        return;
+    }
+    else
+        std::cout << "Host authentication is OK" << std::endl;
+
+    switch(key_type_nr)
+    {
+    case DES_KEY_TYPE:
+        status = SAM_change_key_entry_DES_AV2_plain_one_key(key_no, key_a, auth_key_no, master_key_ver, 0xFF, apdu_sw);
+        break;
+    case DES2K_KEY_TYPE:
+        status = SAM_change_key_entry_2K3DES_desfire_AV2_plain_one_key(key_no, key_a, auth_key_no, master_key_ver, 0xFF, apdu_sw);
+        break;
+    case DES3K_KEY_TYPE:
+        status = SAM_change_key_entry_3K3DES_AV2_plain_one_key(key_no, key_a, auth_key_no, master_key_ver, 0xFF, apdu_sw);
+        break;
+    case AES_KEY_TYPE:
+        status = SAM_change_key_entry_AES_AV2_plain_one_key(key_no, key_a, auth_key_no, master_key_ver, 0xFF, apdu_sw);
+        break;
+    }
+
+    if (status)
+    {
+        std::cout << std::endl << "Change key entry error";
+        std::cout << std::endl << "SAM_change_key_entry_aes_AV2_plain_one_key(): " << UFR_Status2String(status) << std::endl;
+        printf("APDU status %X %X\n", apdu_sw[0], apdu_sw[1]);
+        return;
+    }
+    else
+        std::cout << "Desfire key stored successfully" << std::endl;
 }
