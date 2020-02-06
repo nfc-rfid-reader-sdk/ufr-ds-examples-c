@@ -15,7 +15,7 @@
 #include <windows.h>
 #include <conio.h>
 
-#define APP_VERSION	"1.3"
+#define APP_VERSION	"1.4"
 #include "lib/include/uFCoder.h"
 
 void convert_str_to_key(std::string key_str, unsigned char *key, unsigned char key_length);
@@ -55,6 +55,9 @@ void GetApplicationIds(void);
 void ClearRecord(void);
 void SamStoreUnlockKey(void);
 void SamStoreKey(void);
+void GetFileSetting(void);
+void ChangeFileSetting(void);
+void DeleteTmcFile(void);
 
 bool set_not_changeable = false, create_with_master = false, master_not_changeable = false;
 
@@ -433,6 +436,72 @@ char* switch_card_status(unsigned short card_status)
 		return retstr;
 }
 
+#define NT4H_COMMAND_ABORTED_INT        0xCA
+#define NT4H_LENGTH_ERROR_INT           0x7E
+#define NT4H_PARAMETER_ERROR_INT        0x9E
+#define NT4H_NO_SUCH_KEY_INT            0x40
+#define NT4H_PERMISSION_DENIED_INT      0x9D
+#define NT4H_AUTHENTICATION_DELAY_INT   0xAD
+#define NT4H_MEMORY_ERROR_INT           0xEE
+#define NT4H_AUTHENTICATION_ERROR_INT   0xAE
+#define NT4H_INTEGRITY_ERROR_INT        0x1E
+#define NT4H_PARAMETER_ERROR_INT        0x9E
+#define NT4H_FILE_NOT_FOUND_INT         0xF0
+#define NT4H_BOUNDARY_ERROR_INT         0xBE
+#define NT4H_NO_CHANGES_INT             0x0C
+
+unsigned long nt4h_error_codes_to_desfire(unsigned char error_code)
+{
+	unsigned long status = 0;
+
+    switch(error_code)
+	{
+    case UFR_OK:
+        status = UFR_OK;
+		break;
+    case UFR_AUTH_ERROR:
+		status = KEY_AUTH_ERROR;
+		break;
+    case UFR_COMMUNICATION_ERROR:
+        status = READER_CARD_COMM_ERROR;
+        break;
+	case NT4H_COMMAND_ABORTED:
+		status = 0x0C00 + NT4H_COMMAND_ABORTED_INT;
+		break;
+	case NT4H_LENGTH_ERROR:
+		status = 0x0C00 + NT4H_LENGTH_ERROR_INT;
+		break;
+	case NT4H_PARAMETER_ERROR:
+		status = NT4H_PARAMETER_ERROR_INT;
+		break;
+	case NT4H_NO_SUCH_KEY:
+		status = 0x0C00 + NT4H_NO_SUCH_KEY_INT;
+		break;
+	case NT4H_PERMISSION_DENIED:
+		status = 0x0C00 + NT4H_PERMISSION_DENIED_INT;
+		break;
+	case NT4H_AUTHENTICATION_DELAY:
+		status = 0x0C00 + NT4H_AUTHENTICATION_DELAY_INT;
+		break;
+	case NT4H_MEMORY_ERROR:
+		status = 0x0C00 + NT4H_MEMORY_ERROR_INT;
+		break;
+    case NT4H_INTEGRITY_ERROR:
+		status = 0x0C00 + NT4H_INTEGRITY_ERROR_INT;
+		break;
+	case NT4H_FILE_NOT_FOUND:
+		status = 0x0C00 + NT4H_FILE_NOT_FOUND_INT;
+		break;
+	case NT4H_BOUNDARY_ERROR:
+		status = 0x0C00 + NT4H_BOUNDARY_ERROR_INT;
+		break;
+    case NT4H_NO_CHANGES:
+        status = 0x0C00 + NT4H_NO_CHANGES_INT;
+        break;
+	}
+	return status;
+}
+
 //------------------------------------------------------------------------------
 char* get_result_str(unsigned short card_status, unsigned short exec_time)
 {
@@ -642,7 +711,10 @@ void usage(void)
 			   "  (q) - Clear Record file\n"
 			   "  (r) - Get application IDs\n"
 			   "  (s) - Store key into SAM\n"
-			   "  (t) - Change config parameters\n");
+			   "  (t) - Change config parameters\n"
+			   "  (u) - Get file settings (Desfire light only)\n"
+			   "  (v) - Change file settings (Desfire light only)\n"
+			   "  (w) - Delete transaction MAC file (Desfire light only)\n");
 			   printf(" --------------------------------------------------\n");
 }
 //------------------------------------------------------------------------------
@@ -767,7 +839,17 @@ void menu(char key)
         case 'T':
             ChangeSettings();
             break;
-
+        case 'u':
+        case 'U':
+            GetFileSetting();
+            break;
+        case 'v':
+        case 'V':
+            ChangeFileSetting();
+            break;
+        case 'w':
+        case 'W':
+            DeleteTmcFile();
 		default:
 			usage();
 			break;
@@ -3271,7 +3353,10 @@ void ReadValueFile()
 
     std::cout << "Execution time: " << exec_time << " ms" << std::endl;
 
-    std::cout << "Value: " << std::to_string(file_value) << std::endl;
+    if(card_status == CARD_OPERATION_OK)
+        std::cout << "Value: " << std::to_string(file_value) << std::endl;
+    else
+        std::cout << "Value has not be read" << std::endl;
 }
 //------------------------------------------------------------------------------
 
@@ -3402,7 +3487,10 @@ void IncreaseValueFile()
 
     std::cout << "Execution time: " << exec_time << " ms" << std::endl;
 
-    std::cout << "Value increased by: " << std::to_string(file_value) << std::endl;
+    if(card_status == CARD_OPERATION_OK)
+        std::cout << "Value increased by: " << std::to_string(file_value) << std::endl;
+    else
+        std::cout << "Value has not been increased" << std::endl;
 
 }
 //------------------------------------------------------------------------------
@@ -3534,9 +3622,10 @@ void DecreaseValueFile()
     std::cout << "Card status is: " << switch_card_status(card_status) << std::endl;
 
     std::cout << "Execution time: " << exec_time << " ms" << std::endl;
-
-    std::cout << "Value decreased by: " << std::to_string(file_value) << std::endl;
-
+    if(card_status == CARD_OPERATION_OK)
+        std::cout << "Value decreased by: " << std::to_string(file_value) << std::endl;
+    else
+        std::cout << "Value has not be decreased" << std::endl;
 }
 
 //------------------------------------------------------------------------------
@@ -4130,7 +4219,7 @@ void GetApplicationIds(void)
 	uint32_t app_ids[100];
 	unsigned char app_ids_nr;
 
-	memset(app_ids, 0, 100);
+	memset(app_ids, 0, 400);
 
 	if (internal_key == false)
     {
@@ -4219,10 +4308,13 @@ void ClearRecord(void)
 	unsigned char key_nr = 0;
 	unsigned long aid;
 	unsigned char file_id;
+	unsigned char aid_key_nr;
 
 	aid = strtol(settings[1].c_str(),NULL,16);
 
     file_id = stoul(settings[3], nullptr, 10);
+
+    aid_key_nr = stoul(settings[2], nullptr, 10);
 
     if (internal_key == false)
     {
@@ -4244,37 +4336,37 @@ void ClearRecord(void)
         if (internal_key == true)
         {
             if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_int_DesfireClearRecordFile_aes(key_nr, aid, file_id, &card_status, &exec_time);
+                status = uFR_int_DesfireClearRecordFile_aes_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
             else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_int_DesfireClearRecordFile_des(key_nr, aid, file_id, &card_status, &exec_time);
+                status = uFR_int_DesfireClearRecordFile_des_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
             else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireClearRecordFile_2k3des(key_nr, aid, file_id, &card_status, &exec_time);
+                status = uFR_int_DesfireClearRecordFile_2k3des_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
             else
-                status = uFR_int_DesfireClearRecordFile_3k3des(key_nr, aid, file_id, &card_status, &exec_time);
+                status = uFR_int_DesfireClearRecordFile_3k3des_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
         }
         else
         {
             if(sam_key == true)
             {
                 if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_SAM_DesfireClearRecordFileAesAuth(key_nr, aid, file_id, &card_status, &exec_time);
+                    status = uFR_SAM_DesfireClearRecordFileAesAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
                 else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_SAM_DesfireClearRecordFileDesAuth(key_nr, aid, file_id, &card_status, &exec_time);
+                    status = uFR_SAM_DesfireClearRecordFileDesAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
                 else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_SAM_DesfireClearRecordFile2k3desAuth(key_nr, aid, file_id, &card_status, &exec_time);
+                    status = uFR_SAM_DesfireClearRecordFile2k3desAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
                 else
-                    status = uFR_SAM_DesfireClearRecordFile3k3desAuth(key_nr, aid, file_id, &card_status, &exec_time);
+                    status = uFR_SAM_DesfireClearRecordFile3k3desAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
             }
             else
             {
                 if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireClearRecordFile_aes_PK(key_ext, aid, file_id, &card_status, &exec_time);
+                    status = uFR_int_DesfireClearRecordFile_aes_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
                 else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireClearRecordFile_des_PK(key_ext, aid, file_id, &card_status, &exec_time);
+                    status = uFR_int_DesfireClearRecordFile_des_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
                 else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireClearRecordFile_2k3des_PK(key_ext, aid, file_id, &card_status, &exec_time);
+                    status = uFR_int_DesfireClearRecordFile_2k3des_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
                 else
-                    status = uFR_int_DesfireClearRecordFile_3k3des_PK(key_ext, aid, file_id, &card_status, &exec_time);
+                    status = uFR_int_DesfireClearRecordFile_3k3des_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
             }
         }
     }
@@ -4445,4 +4537,221 @@ void SamStoreKey(void)
     }
     else
         std::cout << "Desfire key stored successfully" << std::endl;
+}
+
+void GetFileSetting(void)
+{
+    UFR_STATUS status;
+    int file_no_int;
+    uint8_t file_no, file_type, communication_mode;
+    uint8_t read_key_no, write_key_no, read_write_key_no, change_key_no;
+    uint32_t file_size;
+    int32_t lower_limit, upper_limit;
+    uint32_t limited_credit_value;
+    uint8_t limited_credit_enable, free_get_value;
+    uint32_t record_size, max_number_of_rec, curr_number_of_rec;
+    uint8_t ex_unauth_operation, tmc_limit_conf, tm_key_type, tm_key_version;
+    uint32_t tmc_limit;
+    uint8_t dfl_status;
+
+    std::cout << "Enter file number:" << std::endl;
+    scanf("%d%*c", &file_no_int);
+    file_no = file_no_int & 0xFF;
+
+    dfl_status = dfl_get_file_settings(file_no, &file_type, &communication_mode,
+							&read_key_no, &write_key_no, &read_write_key_no, &change_key_no,
+							&file_size,
+							&lower_limit, &upper_limit, &limited_credit_value, &limited_credit_enable, &free_get_value,
+							&record_size, &max_number_of_rec, &curr_number_of_rec,
+							&ex_unauth_operation, &tmc_limit_conf, &tm_key_type, &tm_key_version, &tmc_limit);
+
+	status = (UFR_STATUS)nt4h_error_codes_to_desfire(dfl_status);
+    if(status)
+    {
+        std::cout << std::endl << "Get file setting error "  << UFR_Status2String(status) << std::endl;
+        return;
+    }
+
+    switch(file_type)
+    {
+    case 0:
+        printf("\nStandard data file\n");
+        break;
+    case 2:
+        printf("\nValue file\n");
+        break;
+    case 4:
+        printf("\nCyclic record file\n");
+        break;
+    case 5:
+        printf("\nTransaction MAC file\n");
+        break;
+    }
+
+    switch(communication_mode)
+    {
+    case 0:
+        printf("Plain communication mode\n");
+        break;
+    case 1:
+        printf("Macked communication mode\n");
+        break;
+    case 3:
+        printf("Enciphered communication mode\n");
+        break;
+    }
+
+    printf("Read key no = %d\n", read_key_no);
+    printf("Write key no = %d\n", write_key_no);
+    printf("Read/Write key no = %d\n", read_write_key_no);
+    printf("Change key no = %d\n", change_key_no);
+
+    switch(file_type)
+    {
+    case 0:
+        printf("File size = %d\n", file_size);
+        break;
+    case 2:
+        printf("Lower limit = %d\n", lower_limit);
+        printf("Upper limit = %d\n", upper_limit);
+        printf("Limited credit value = %d\n", limited_credit_value);
+        if(limited_credit_enable)
+            printf("Limited credit enabled\n");
+        else
+            printf("Limited credit disabled\n");
+        if(free_get_value)
+            printf("Free get value enabled\n");
+        else
+            printf("Free get value disabled\n");
+        break;
+    case 4:
+        printf("Record size = %d\n", record_size);
+        printf("Maximal number of records = %d\n", max_number_of_rec);
+        printf("Current number of records = %d\n", curr_number_of_rec);
+        break;
+    case 5:
+        if(ex_unauth_operation)
+            printf("Exclude unauthenticated operations from TMI enabled\n");
+        else
+            printf("Exclude unauthenticated operations from TMI disabled\n");
+        if(tmc_limit_conf)
+            printf("TMCLimit configuration enabled\n");
+        else
+            printf("TMCLimit configuration disabled\n");
+        if(tm_key_type == 2)
+            printf("TMC key type is AES\n");
+        printf("TM key version = %d\n", tm_key_version);
+        printf("TM counter limit = %d\n", tmc_limit);
+        break;
+    }
+}
+
+void ChangeFileSetting(void)
+{
+    UFR_STATUS status;
+    int file_no, key_nr = 0, app_key_nr;
+    uint8_t curr_comm_mode, new_comm_mode;
+    int comm_choice = 0;
+    uint8_t dfl_status;
+
+	int read_key_nr, write_key_nr, read_write_key_nr, change_key_nr;
+
+    if (internal_key == false)
+    {
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
+        {
+            return;
+        }
+    } else
+    {
+        key_nr = stoul(settings[4],nullptr,10);
+    }
+
+    file_no = stoul(settings[3], nullptr, 10);
+    app_key_nr = stoul(settings[2], nullptr, 10);
+
+   curr_comm_mode = 3;
+
+    printf("Enter Read key number: ");
+    scanf("%d%*c", &read_key_nr);
+
+    printf("Enter Write key number: ");
+    scanf("%d%*c", &write_key_nr);
+
+    printf("Enter Read/Write key number: ");
+    scanf("%d%*c", &read_write_key_nr);
+
+    printf("Enter Change key number: ");
+    scanf("%d%*c", &change_key_nr);
+
+    printf("Choose new communication mode:\n 1 - PLAIN.\n 2 - MACKED.\n 3 - ENCIPHERED.\n");
+    scanf("%d%*c", &comm_choice);
+
+    switch (comm_choice)
+	{
+	case 1:
+		new_comm_mode = 0;
+		break;
+	case 2:
+		new_comm_mode = 1;
+		break;
+	case 3:
+		new_comm_mode = 3;
+		break;
+	default:
+		new_comm_mode = 0;
+		break;
+	}
+
+	if(internal_key)
+        dfl_status = dfl_change_file_settings(key_nr, file_no, app_key_nr, curr_comm_mode, new_comm_mode, read_key_nr, write_key_nr, read_write_key_nr, change_key_nr);
+	else
+        dfl_status = dfl_change_file_settings_pk(key_ext, file_no, app_key_nr, curr_comm_mode, new_comm_mode, read_key_nr, write_key_nr, read_write_key_nr, change_key_nr);
+
+    status = (UFR_STATUS)nt4h_error_codes_to_desfire(dfl_status);
+
+    if (status)
+    {
+        std::cout << std::endl << "Change file setting error" << UFR_Status2String(status) << std::endl;
+        return;
+    }
+    else
+        std::cout << "File setting changed successfully" << std::endl;
+}
+
+void DeleteTmcFile(void)
+{
+   UFR_STATUS status;
+   int key_nr = 0;
+   uint8_t dfl_status;
+
+   if (internal_key == false)
+    {
+        if(sam_key == true)
+           key_nr = stoul(settings[4], nullptr, 10);
+        else if(!prepare_key(key_ext))
+        {
+            return;
+        }
+    } else
+    {
+        key_nr = stoul(settings[4],nullptr,10);
+    }
+
+   if(internal_key)
+        dfl_status = dfl_delete_tmc_file(key_nr, 0x0F);
+   else
+        dfl_status = dfl_delete_tmc_file_pk(key_ext, 0x0F);
+
+    status = (UFR_STATUS)nt4h_error_codes_to_desfire(dfl_status);
+
+    if (status)
+    {
+        std::cout << std::endl << "Delete transaction MAC file error " << UFR_Status2String(status) << std::endl;
+        return;
+    }
+    else
+        std::cout << "File setting changed successfully" << std::endl;
 }
