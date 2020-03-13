@@ -15,7 +15,7 @@
 #include <windows.h>
 #include <conio.h>
 
-#define APP_VERSION	"1.4"
+#define APP_VERSION	"1.5"
 #include "lib/include/uFCoder.h"
 
 void convert_str_to_key(std::string key_str, unsigned char *key, unsigned char key_length);
@@ -459,6 +459,9 @@ unsigned long nt4h_error_codes_to_desfire(unsigned char error_code)
     case UFR_OK:
         status = UFR_OK;
 		break;
+    case UFR_NO_CARD:
+        status = NO_CARD_DETECTED;
+        break;
     case UFR_AUTH_ERROR:
 		status = KEY_AUTH_ERROR;
 		break;
@@ -498,7 +501,7 @@ unsigned long nt4h_error_codes_to_desfire(unsigned char error_code)
     case NT4H_NO_CHANGES:
         status = 0x0C00 + NT4H_NO_CHANGES_INT;
         break;
-	}
+  	}
 	return status;
 }
 
@@ -1625,84 +1628,38 @@ void ChangeKeySettings()
 	unsigned char setting;
 
 	unsigned char key_ext[24];
-	unsigned char key_nr = 0, set_temp = 0;
+	unsigned char key_nr = 0;
 	unsigned long aid;
 
     int choice = 0;
 
     std::cout << " Choose key settings:" << std::endl;
-    std::cout << " 0 - No settings" << std::endl;
-    std::cout << " 1 - Settings not changeable anymore" << std::endl;
-    std::cout << " 2 - Create or delete application with master key authentication" << std::endl;
-    std::cout << " 3 - Master key not changeable anymore" << std::endl;
-    std::cout << " 4 - Settings not changeable anymore and create or delete application with master key" << std::endl;
-    std::cout << " 5 - Settings and master key not changeable anymore" << std::endl;
-    std::cout << " 6 - Create and delete application with master key and master key is not changeable anymore" << std::endl;
-    std::cout << " 7 - Settings not changeable anymore, create or delete application with master key,";
-    std::cout << " master key is not changeable anymore" << std::endl;
+    std::cout << "0 - Settings not changeable, create or delete application with master key, directory list with master key, master key is not changeable" << std::endl;
+    std::cout << "1 - Settings not changeable, create or delete application with master key, directory list with master key, master key is changeable" << std::endl;
+    std::cout << "2 - Settings not changeable, create or delete application with master key, directory list without authentication, master key is not changeable" << std::endl;
+    std::cout << "3 - Settings not changeable, create or delete application with master key, directory list without authentication, master key is changeable" << std::endl;
+    std::cout << "4 - Settings not changeable, create or delete application without authentication, directory list with master key, master key is not changeable" << std::endl;
+    std::cout << "5 - Settings not changeable, create or delete application without authentication, directory list with master key, master key is changeable" << std::endl;
+    std::cout << "6 - Settings not changeable, create or delete application without authentication, directory list without authentication, master key is not changeable" << std::endl;
+    std::cout << "7 - Settings not changeable, create or delete application without authentication, directory list without authentication, master key is changeable" << std::endl;
+    std::cout << "8 - Settings is changeable, create or delete application with master key, directory list with master key, master key is not changeable" << std::endl;
+    std::cout << "9 - Settings is changeable, create or delete application with master key, directory list with master key, master key is changeable" << std::endl;
+    std::cout << "10 - Settings is changeable, create or delete application with master key, directory list without authentication, master key is not changeable" << std::endl;
+    std::cout << "11 - Settings is changeable, create or delete application with master key, directory list without authentication, master key is changeable" << std::endl;
+    std::cout << "12 - Settings is changeable, create or delete application without authentication, directory list with master key, master key is not changeable" << std::endl;
+    std::cout << "13 - Settings is changeable, create or delete application without authentication, directory list with master key, master key is changeable" << std::endl;
+    std::cout << "14 - Settings is changeable, create or delete application without authentication, directory list without authentication, master key is not changeable" << std::endl;
+    std::cout << "15 - Settings is changeable, create or delete application without authentication, directory list without authentication, master key is changeable (default)" << std::endl;
 
     scanf("%d%*c",&choice);
 
-    if(choice == 1)
+    if(choice > 15)
     {
-        set_temp |= 0x04;
-
-    }else if(choice == 2)
-    {
-        set_temp |= 0x02;
-    }
-    else if(choice == 3)
-    {
-        set_temp |= 0x01;
-
-    }else if(choice == 4)
-    {
-        set_temp |= 0x04;
-        set_temp |= 0x02;
-
-    }else if(choice == 5)
-    {
-        set_temp |= 0x04;
-        set_temp |= 0x01;
-
-    }else if(choice == 6)
-    {
-        set_temp |= 0x02;
-        set_temp |= 0x01;
-    }else if(choice == 7)
-    {
-        set_temp |= 0x04;
-        set_temp |= 0x02;
-        set_temp |= 0x01;
+        std::cout << "Wrong choice" << std::endl;
+        return;
     }
 
-    switch (set_temp)
-    {
-        case 0:
-            setting = DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_CHANGE_KEY_CHANGE;
-            break;
-        case 1:
-            setting = DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_CHANGE_KEY_NOT_CHANGE;
-            break;
-        case 2:
-            setting = DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_CHANGE_KEY_CHANGE;
-            break;
-        case 3:
-            setting = DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_CHANGE_KEY_NOT_CHANGE;
-            break;
-        case 4:
-            setting = DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_NOT_CHANGE_KEY_CHANGE;
-            break;
-        case 5:
-            setting = DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_NOT_CHANGE_KEY_NOT_CHANGE;
-            break;
-        case 6:
-            setting = DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_NOT_CHANGE_KEY_CHANGE;
-            break;
-        case 7:
-            setting = DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_NOT_CHANGE_KEY_NOT_CHANGE;
-            break;
-    }
+    setting = choice & 0x0F;
 
     aid = strtol(settings[1].c_str(),NULL,16);
 
@@ -1780,7 +1737,7 @@ void GetKeySettings()
 	unsigned short card_status;
 	unsigned short exec_time;
 
-	unsigned char setting, set_temp = 0;
+	unsigned char setting = 0;
 	unsigned char max_key_no;
 
 	unsigned char key_ext[24];
@@ -1804,42 +1761,49 @@ void GetKeySettings()
         key_nr = stoul(settings[4],nullptr,10);
     }
 
-    if(internal_key == true)
+    if(master_authent_req)
     {
-        if(key_type_nr == AES_KEY_TYPE)
-            status = uFR_int_DesfireGetKeySettings_aes(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
-        else if(key_type_nr == DES_KEY_TYPE)
-            status = uFR_int_DesfireGetKeySettings_des(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
-        else if(key_type_nr == DES2K_KEY_TYPE)
-            status = uFR_int_DesfireGetKeySettings_2k3des(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
-        else
-            status = uFR_int_DesfireGetKeySettings_3k3des(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
-	}
-	else
-	{
-		if(sam_key == true)
+        if(internal_key == true)
         {
             if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_SAM_DesfireGetKeySettingsAesAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+                status = uFR_int_DesfireGetKeySettings_aes(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
             else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_SAM_DesfireGetKeySettingsDesAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+                status = uFR_int_DesfireGetKeySettings_des(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
             else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_SAM_DesfireGetKeySettings2k3desAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+                status = uFR_int_DesfireGetKeySettings_2k3des(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
             else
-                status = uFR_SAM_DesfireGetKeySettings3k3desAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+                status = uFR_int_DesfireGetKeySettings_3k3des(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
         }
         else
         {
-            if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_int_DesfireGetKeySettings_aes_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_int_DesfireGetKeySettings_des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireGetKeySettings_2k3des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+            if(sam_key == true)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_SAM_DesfireGetKeySettingsAesAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_SAM_DesfireGetKeySettingsDesAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_SAM_DesfireGetKeySettings2k3desAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+                else
+                    status = uFR_SAM_DesfireGetKeySettings3k3desAuth(key_nr, aid, &setting, &max_key_no, &card_status, &exec_time);
+            }
             else
-                status = uFR_int_DesfireGetKeySettings_3k3des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireGetKeySettings_aes_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireGetKeySettings_des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireGetKeySettings_2k3des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireGetKeySettings_3k3des_PK(key_ext, aid, &setting, &max_key_no, &card_status, &exec_time);
+            }
         }
-	}
+    }
+    else
+    {
+        status = uFR_int_DesfireGetKeySettings_no_auth(aid, &setting, &max_key_no, &card_status, &exec_time);
+    }
 
 	if(status)
     {
@@ -1863,81 +1827,57 @@ void GetKeySettings()
 
         setting &= 0x0F;
 
-		switch (setting)
-		{
-		case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_CHANGE_KEY_CHANGE:
-			set_temp = 0;
-			break;
-		case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_CHANGE_KEY_NOT_CHANGE:
-			set_temp = 1;
-			break;
-		case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_CHANGE_KEY_CHANGE:
-			set_temp = 2;
-			break;
-		case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_CHANGE_KEY_NOT_CHANGE:
-			set_temp = 3;
-			break;
-		case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_NOT_CHANGE_KEY_CHANGE:
-			set_temp = 4;
-			break;
-		case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_NOT_CHANGE_KEY_NOT_CHANGE:
-			set_temp = 5;
-			break;
-		case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_NOT_CHANGE_KEY_CHANGE:
-			set_temp = 6;
-			break;
-		case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_NOT_CHANGE_KEY_NOT_CHANGE:
-			set_temp = 7;
-			break;
-		}
-
-        if (set_temp & 0x04)
-			set_not_changeable = true;
-		else
-			set_not_changeable = false;
-
-		if (set_temp & 0x02)
-			create_with_master = true;
-		else
-			create_with_master = false;
-
-		if (set_temp & 0x01)
-			master_not_changeable = true;
-		else
-			master_not_changeable = false;
-
-            if (set_not_changeable == true && create_with_master == true && master_not_changeable == true)
-            {
-                std::cout << "7 - Settings not changable anymore, create or delete application with master key, master key is not changeable anymore" << std::endl;
-            }
-            else if (set_not_changeable == false && create_with_master == true && master_not_changeable == true)
-            {
-                std::cout << "6 - Create and delete application with master key and master key is not changable anymore" << std::endl;
-            }
-            else if (set_not_changeable == true && create_with_master == false && master_not_changeable == true)
-            {
-                std::cout << "5 - Settings and master key not changable anymore" << std::endl;
-            }
-            else if (set_not_changeable == true && create_with_master == true && master_not_changeable == false)
-            {
-                std::cout << "4 - Settings not changeable anymore and create or delete application with master key" << std::endl;
-            }
-            else if (set_not_changeable == false && create_with_master == false && master_not_changeable == true)
-            {
-                std::cout << "3 - Master key not changeable anymore" << std::endl;
-            }
-            else if (set_not_changeable == false && create_with_master == true && master_not_changeable == false)
-            {
-                std::cout << "2 - Create or delete application with master key authentication" << std::endl;
-            }
-            else if (set_not_changeable == true && create_with_master == false && master_not_changeable == false)
-            {
-                std::cout << "1 - Settings not changeable anymore" << std::endl;
-            }
-            else if (set_not_changeable == false && create_with_master == false && master_not_changeable == false)
-            {
-                std::cout << "0 - No settings set." << std::endl;
-            }
+        switch(setting)
+        {
+        case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_NOT_CHANGE_KEY_NOT_CHANGE_APP_IDS_WITH_AUTH:
+            std::cout << "0 - Settings not changeable, create or delete application with master key, directory list with master key, master key is not changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_NOT_CHANGE_KEY_CHANGE_APP_IDS_WITH_AUTH:
+            std::cout << "1 - Settings not changeable, create or delete application with master key, directory list with master key, master key is changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_NOT_CHANGE_KEY_NOT_CHANGE_APP_IDS_WIDTHOUT_AUTH:
+            std::cout << "2 - Settings not changeable, create or delete application with master key, directory list without authentication, master key is not changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_NOT_CHANGE_KEY_CHANGE_APP_IDS_WIDTHOUT_AUTH:
+            std::cout << "3 - Settings not changeable, create or delete application with master key, directory list without authentication, master key is changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_NOT_CHANGE_KEY_NOT_CHANGE_APP_IDS_WITH_AUTH:
+            std::cout << "4 - Settings not changeable, create or delete application without authentication, directory list with master key, master key is not changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_NOT_CHANGE_KEY_CHANGE_APP_IDS_WITH_AUTH:
+            std::cout << "5 - Settings not changeable, create or delete application without authentication, directory list with master key, master key is changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_NOT_CHANGE_KEY_NOT_CHANGE_APP_IDS_WIDTHOUT_AUTH:
+            std::cout << "6 - Settings not changeable, create or delete application without authentication, directory list without authentication, master key is not changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_NOT_CHANGE_KEY_CHANGE_APP_IDS_WIDTHOUT_AUTH:
+            std::cout << "7 - Settings not changeable, create or delete application without authentication, directory list without authentication, master key is changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_CHANGE_KEY_NOT_CHANGE_APP_IDS_WITH_AUTH:
+            std::cout << "8 - Settings is changeable, create or delete application with master key, directory list with master key, master key is not changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_CHANGE_KEY_CHANGE_APP_IDS_WITH_AUTH:
+            std::cout << "9 - Settings is changeable, create or delete application with master key, directory list with master key, master key is changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_CHANGE_KEY_NOT_CHANGE_APP_IDS_WIDTHOUT_AUTH:
+            std::cout << "10 - Settings is changeable, create or delete application with master key, directory list without authentication, master key is not changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_CHANGE_KEY_CHANGE_APP_IDS_WIDTHOUT_AUTH:
+            std::cout << "11 - Settings is changeable, create or delete application with master key, directory list without authentication, master key is changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_CHANGE_KEY_NOT_CHANGE_APP_IDS_WIDTH_AUTH:
+            std::cout << "12 - Settings is changeable, create or delete application without authentication, directory list with master key, master key is not changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_CHANGE_KEY_CHANGE_APP_IDS_WIDTH_AUTH:
+            std::cout << "13 - Settings is changeable, create or delete application without authentication, directory list with master key, master key is changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_CHANGE_KEY_NOT_CHANGE_APP_IDS_WIDTHOUT_AUTH:
+            std::cout << "14 - Settings is changeable, create or delete application without authentication, directory list without authentication, master key is not changeable" << std::endl;
+            break;
+        case DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_CHANGE_KEY_CHANGE_APP_IDS_WIDTHOUT_AUTH:
+            std::cout << "15 - Settings is changeable, create or delete application without authentication, directory list without authentication, master key is changeable (default)" << std::endl;
+            break;
+        }
     }
 }
 
@@ -2681,6 +2621,19 @@ void DeleteApplication()
 	unsigned char key_ext[24];
 	unsigned char key_nr = 0;
 
+	int master_key_type = 0;
+
+	std::cout << " Enter master key type:" << std::endl;
+	std::cout << " 1 - card master key" << std::endl;
+	std::cout << " 2 - application master key" << std::endl;
+
+	scanf("%d%*c",&master_key_type);
+	if(!(master_key_type == 1 || master_key_type == 2))
+    {
+        std::cout << "Wrong choice" << std::endl;
+        return;
+    }
+
     std::string str_aid = "";
 
     printf("Input AID to delete (3 bytes hex): ");
@@ -2704,39 +2657,83 @@ void DeleteApplication()
 
     if (internal_key == true)
     {
-        if(key_type_nr == AES_KEY_TYPE)
-            status = uFR_int_DesfireDeleteApplication_aes(key_nr, aid, &card_status, &exec_time);
-        else if(key_type_nr == DES_KEY_TYPE)
-            status = uFR_int_DesfireDeleteApplication_des(key_nr, aid, &card_status, &exec_time);
-        else if(key_type_nr == DES2K_KEY_TYPE)
-            status = uFR_int_DesfireDeleteApplication_2k3des(key_nr, aid, &card_status, &exec_time);
+        if(master_key_type == 1)
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_int_DesfireDeleteApplication_aes(key_nr, aid, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_int_DesfireDeleteApplication_des(key_nr, aid, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_int_DesfireDeleteApplication_2k3des(key_nr, aid, &card_status, &exec_time);
+            else
+                status = uFR_int_DesfireDeleteApplication_3k3des(key_nr, aid, &card_status, &exec_time);
+        }
         else
-            status = uFR_int_DesfireDeleteApplication_3k3des(key_nr, aid, &card_status, &exec_time);
+        {
+            if(key_type_nr == AES_KEY_TYPE)
+                status = uFR_int_DesfireDeleteApplication_app_master_aes(key_nr, aid, &card_status, &exec_time);
+            else if(key_type_nr == DES_KEY_TYPE)
+                status = uFR_int_DesfireDeleteApplication_app_master_des(key_nr, aid, &card_status, &exec_time);
+            else if(key_type_nr == DES2K_KEY_TYPE)
+                status = uFR_int_DesfireDeleteApplication_app_master_2k3des(key_nr, aid, &card_status, &exec_time);
+            else
+                status = uFR_int_DesfireDeleteApplication_app_master_3k3des(key_nr, aid, &card_status, &exec_time);
+        }
     }
     else
     {
         if(sam_key == true)
         {
-            if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_SAM_DesfireDeleteApplicationAesAuth(key_nr, aid, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_SAM_DesfireDeleteApplicationDesAuth(key_nr, aid, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_SAM_DesfireDeleteApplication2k3desAuth(key_nr, aid, &card_status, &exec_time);
+            if(master_key_type == 1)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_SAM_DesfireDeleteApplicationAesAuth(key_nr, aid, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_SAM_DesfireDeleteApplicationDesAuth(key_nr, aid, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_SAM_DesfireDeleteApplication2k3desAuth(key_nr, aid, &card_status, &exec_time);
+                else
+                    status = uFR_SAM_DesfireDeleteApplication3k3desAuth(key_nr, aid, &card_status, &exec_time);
+            }
             else
-                status = uFR_SAM_DesfireDeleteApplication3k3desAuth(key_nr, aid, &card_status, &exec_time);
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_SAM_DesfireDeleteApplication_app_master_AesAuth(key_nr, aid, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_SAM_DesfireDeleteApplication_app_master_DesAuth(key_nr, aid, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_SAM_DesfireDeleteApplication_app_master_2k3desAuth(key_nr, aid, &card_status, &exec_time);
+                else
+                    status = uFR_SAM_DesfireDeleteApplication_app_master_3k3desAuth(key_nr, aid, &card_status, &exec_time);
+            }
+
         }
         else
         {
-            if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_int_DesfireDeleteApplication_aes_PK(key_ext, aid, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_int_DesfireDeleteApplication_des_PK(key_ext, aid, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireDeleteApplication_2k3des_PK(key_ext, aid, &card_status, &exec_time);
+            if(master_key_type == 1)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireDeleteApplication_aes_PK(key_ext, aid, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireDeleteApplication_des_PK(key_ext, aid, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireDeleteApplication_2k3des_PK(key_ext, aid, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireDeleteApplication_3k3des_PK(key_ext, aid, &card_status, &exec_time);
+            }
             else
-                status = uFR_int_DesfireDeleteApplication_3k3des_PK(key_ext, aid, &card_status, &exec_time);
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireDeleteApplication_app_master_aes_PK(key_ext, aid, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireDeleteApplication_app_master_des_PK(key_ext, aid, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireDeleteApplication_app_master_2k3des_PK(key_ext, aid, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireDeleteApplication_app_master_3k3des_PK(key_ext, aid, &card_status, &exec_time);
+            }
         }
+
     }
 
     if (status)

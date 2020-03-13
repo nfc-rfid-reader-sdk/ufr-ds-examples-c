@@ -1,5 +1,5 @@
 AES key: 00000000000000000000000000000000
 AID 3 bytes hex: A10000
 AID key number for auth: 0
-File ID: 1
+File ID: 3
 Internal key number: 100
