@@ -2332,7 +2332,7 @@ void MakeApplication()
 	unsigned short card_status;
 	unsigned short exec_time;
 
-	unsigned char setting, set_temp = 0;
+	unsigned char setting = 0;
 	unsigned long aid;
 	std::string str_aid = "";
 	int max_key_no;
@@ -2372,79 +2372,33 @@ void MakeApplication()
     printf("Input maximal key number: (1 - 14)");
     scanf("%d%*c", &max_key_no);
 
-    std::cout << " Choose application master key settings:" << std::endl;
-    std::cout << " 0 - No settings" << std::endl;
-    std::cout << " 1 - Settings not changeable anymore" << std::endl;
-    std::cout << " 2 - Create or delete file with master key authentication" << std::endl;
-    std::cout << " 3 - Master key not changeable anymore" << std::endl;
-    std::cout << " 4 - Settings not changeable anymore and create or delete file with master key" << std::endl;
-    std::cout << " 5 - Settings and master key not changeable anymore" << std::endl;
-    std::cout << " 6 - Create and delete file with master key and master key is not changeable anymore" << std::endl;
-    std::cout << " 7 - Settings not changeable anymore, create or delete file with master key,";
-    std::cout << " master key is not changeable anymore" << std::endl;
+    std::cout << "Choose application master key settings:" << std::endl;
+    std::cout << "0 - Settings not changeable, create or delete file with master key, directory list with master key, master key is not changeable" << std::endl;
+    std::cout << "1 - Settings not changeable, create or delete file with master key, directory list with master key, master key is changeable" << std::endl;
+    std::cout << "2 - Settings not changeable, create or delete file with master key, directory list without authentication, master key is not changeable" << std::endl;
+    std::cout << "3 - Settings not changeable, create or delete file with master key, directory list without authentication, master key is changeable" << std::endl;
+    std::cout << "4 - Settings not changeable, create or delete file without authentication, directory list with master key, master key is not changeable" << std::endl;
+    std::cout << "5 - Settings not changeable, create or delete file without authentication, directory list with master key, master key is changeable" << std::endl;
+    std::cout << "6 - Settings not changeable, create or delete file without authentication, directory list without authentication, master key is not changeable" << std::endl;
+    std::cout << "7 - Settings not changeable, create or delete file without authentication, directory list without authentication, master key is changeable" << std::endl;
+    std::cout << "8 - Settings is changeable, create or delete file with master key, directory list with master key, master key is not changeable" << std::endl;
+    std::cout << "9 - Settings is changeable, create or delete file with master key, directory list with master key, master key is changeable" << std::endl;
+    std::cout << "10 - Settings is changeable, create or delete file with master key, directory list without authentication, master key is not changeable" << std::endl;
+    std::cout << "11 - Settings is changeable, create or delete file with master key, directory list without authentication, master key is changeable" << std::endl;
+    std::cout << "12 - Settings is changeable, create or delete file without authentication, directory list with master key, master key is not changeable" << std::endl;
+    std::cout << "13 - Settings is changeable, create or delete file without authentication, directory list with master key, master key is changeable" << std::endl;
+    std::cout << "14 - Settings is changeable, create or delete file without authentication, directory list without authentication, master key is not changeable" << std::endl;
+    std::cout << "15 - Settings is changeable, create or delete file without authentication, directory list without authentication, master key is changeable (default)" << std::endl;
 
     scanf("%d%*c",&choice);
 
-    if(choice == 1)
+    if(choice > 15)
     {
-        set_temp |= 0x04;
-
-    }else if(choice == 2)
-    {
-        set_temp |= 0x02;
-    }
-    else if(choice == 3)
-    {
-        set_temp |= 0x01;
-
-    }else if(choice == 4)
-    {
-        set_temp |= 0x04;
-        set_temp |= 0x02;
-
-    }else if(choice == 5)
-    {
-        set_temp |= 0x04;
-        set_temp |= 0x01;
-
-    }else if(choice == 6)
-    {
-        set_temp |= 0x02;
-        set_temp |= 0x01;
-    }else if(choice == 7)
-    {
-        set_temp |= 0x04;
-        set_temp |= 0x02;
-        set_temp |= 0x01;
+        std::cout << "Wrong choice" << std::endl;
+        return;
     }
 
-    switch (set_temp)
-    {
-        case 0:
-            setting = DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_CHANGE_KEY_CHANGE;
-            break;
-        case 1:
-            setting = DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_CHANGE_KEY_NOT_CHANGE;
-            break;
-        case 2:
-            setting = DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_CHANGE_KEY_CHANGE;
-            break;
-        case 3:
-            setting = DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_CHANGE_KEY_NOT_CHANGE;
-            break;
-        case 4:
-            setting = DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_NOT_CHANGE_KEY_CHANGE;
-            break;
-        case 5:
-            setting = DESFIRE_KEY_SET_CREATE_WITHOUT_AUTH_SET_NOT_CHANGE_KEY_NOT_CHANGE;
-            break;
-        case 6:
-            setting = DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_NOT_CHANGE_KEY_CHANGE;
-            break;
-        case 7:
-            setting = DESFIRE_KEY_SET_CREATE_WITH_AUTH_SET_NOT_CHANGE_KEY_NOT_CHANGE;
-            break;
-    }
+    setting = choice & 0x0F;
 
     if (internal_key == false)
     {
