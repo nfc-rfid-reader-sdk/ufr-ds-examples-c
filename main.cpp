@@ -15,7 +15,7 @@
 #include <windows.h>
 #include <conio.h>
 
-#define APP_VERSION	"1.5"
+#define APP_VERSION	"1.6"
 #include "lib/include/uFCoder.h"
 
 void convert_str_to_key(std::string key_str, unsigned char *key, unsigned char key_length);
@@ -698,7 +698,7 @@ void usage(void)
 			   "  (9) - Internal key unlock\n"
 			   "  (a) - Set baud rate\n"
 			   "  (b) - Get baud rate\n"
-			   "  (c) - Store key into reader\n"
+			   "  (c) - Store key (or Reader ID for transaction MAC)into reader\n"
 			   "  (d) - Change key\n"
 			   "  (e) - Change key settings\n"
 			   "  (f) - Get key settings\n"
@@ -1452,6 +1452,7 @@ void StoreKeyIntoReader()
     std::cout << " 2 - 2K3DES (16 bytes)" << std::endl;
     std::cout << " 3 - 3K3DES (24 bytes)" << std::endl;
     std::cout << " 4 - AES (16 bytes)" << std::endl;
+    std::cout << " 5 - Reader ID (transaction MAC)" << std::endl;
 
     scanf("%d%*c", &choice);
 
@@ -1469,6 +1470,8 @@ void StoreKeyIntoReader()
     case 4:
         key_type = AES_KEY_TYPE;
         break;
+    case 5:
+        key_type = 5; //Reader ID
     }
 
 	std::string key_str;
@@ -1488,11 +1491,14 @@ void StoreKeyIntoReader()
     case AES_KEY_TYPE:
         std::cout << "Enter AES key (16 bytes): " << std::endl;
         break;
+    case 5:
+        std::cout << "Enter Reader ID (16 bytes): " << std::endl;
+        break;
     }
 
     std::cin >> key_str;
 
-    if(key_type == AES_KEY_TYPE || key_type == DES2K_KEY_TYPE)
+    if(key_type == AES_KEY_TYPE || key_type == DES2K_KEY_TYPE || key_type == 5)
     {
         if (key_str.length() != 32)
         {
@@ -1529,11 +1535,17 @@ void StoreKeyIntoReader()
         }
     }
 
-    std::cout << "Input reader internal key number (0-15):" << std::endl;
+    if(key_type < 5)
+    {
+        std::cout << "Input reader internal key number (0-15):" << std::endl;
 
-    scanf("%d%*c", &key_no);
+        scanf("%d%*c", &key_no);
 
-    status = uFR_int_DesfireWriteKey(key_no, key, key_type);
+        status = uFR_int_DesfireWriteKey(key_no, key, key_type);
+    }
+    else
+        status = WriteReaderId(key);
+
 
     if (status)
     {
@@ -2717,7 +2729,7 @@ void MakeFile(){
 
 	unsigned char communication_settings;
 	int file_id;
-	int read_key_nr, write_key_nr, read_write_key_nr, change_key_nr;
+	int read_key_nr, write_key_nr, read_write_key_nr, change_key_nr, commit_reader_id_key_nr;
 
 	unsigned char key_ext[24];
 	unsigned char key_nr = 0;
@@ -2727,6 +2739,8 @@ void MakeFile(){
     int comm_choice = 0, file_choice = 0;
 
     int record_size, max_rec_nr;
+    unsigned char trans_mac_key[16];
+    std::string trans_mac_key_str = "";
 
     aid = strtol(settings[1].c_str(), NULL,16);
 
@@ -2738,16 +2752,31 @@ void MakeFile(){
     scanf("%d%*c", &comm_choice);
 
     printf("Choose file type:\n 1 - Standard data file\n 2 - Value file\n 3 - Linear record file\n 4 - Cyclic record file\n");
+    printf(" 5 - Transaction MAC file (Desfire Light and Desfire EV2 only)\n");
     scanf("%d%*c", &file_choice);
+
+    if(file_choice > 5)
+    {
+        printf("Wrong choice \n");
+        return;
+    }
 
     printf("Enter Read key number: ");
     scanf("%d%*c", &read_key_nr);
 
-    printf("Enter Write key number: ");
-    scanf("%d%*c", &write_key_nr);
+    if(file_choice == 5)
+    {
+        printf("Enter Commit Reader ID key number: ");
+        scanf("%d%*c", &commit_reader_id_key_nr);
+    }
+    else
+    {
+        printf("Enter Write key number: ");
+        scanf("%d%*c", &write_key_nr);
 
-    printf("Enter Read/Write key number: ");
-    scanf("%d%*c", &read_write_key_nr);
+        printf("Enter Read/Write key number: ");
+        scanf("%d%*c", &read_write_key_nr);
+    }
 
     printf("Enter Change key number: ");
     scanf("%d%*c", &change_key_nr);
@@ -2822,6 +2851,18 @@ void MakeFile(){
         printf("Enter maximal number of records: ");
         scanf("%d%*c", &max_rec_nr);
     }
+    else if(file_choice == 5)
+    {
+        std::cout << "Input transaction MAC AES key (16 bytes):" << std::endl;
+        std::cin >> trans_mac_key_str;
+        if (trans_mac_key_str.length() != 32)
+        {
+            std::cout << "aes key must be 16 bytes long" << std::endl;
+            return;
+        }
+
+        convert_str_to_key(trans_mac_key_str, trans_mac_key, 16);
+    }
 
     if (master_authent_req == true)
     {
@@ -2880,7 +2921,7 @@ void MakeFile(){
                                                     read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
                                                     communication_settings, &card_status, &exec_time);
             }
-            else
+            else if(file_choice == 4)
             {
                 if(key_type_nr == AES_KEY_TYPE)
                     status = uFR_int_DesfireCreateCyclicRecordFile_aes(key_nr, aid, file_id, record_size, max_rec_nr,
@@ -2898,6 +2939,21 @@ void MakeFile(){
                     status = uFR_int_DesfireCreateCyclicRecordFile_3k3des(key_nr, aid, file_id, record_size, max_rec_nr,
                                                     read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
                                                     communication_settings, &card_status, &exec_time);
+            }
+            else
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireCreateTransMacFile_aes(key_nr, aid, file_id, read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                                   communication_settings, trans_mac_key, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireCreateTransMacFile_des(key_nr, aid, file_id, read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                                   communication_settings, trans_mac_key, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireCreateTransMacFile_2k3des(key_nr, aid, file_id, read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                                   communication_settings, trans_mac_key, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireCreateTransMacFile_3k3des(key_nr, aid, file_id, read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                                   communication_settings, trans_mac_key, &card_status, &exec_time);
             }
         }
         else
@@ -2957,7 +3013,7 @@ void MakeFile(){
                                                         read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
                                                         communication_settings, &card_status, &exec_time);
                 }
-                else
+                else if(file_choice == 4)
                 {
                     if(key_type_nr == AES_KEY_TYPE)
                         status = uFR_SAM_DesfireCreateCyclicRecordFileAesAuth(key_nr, aid, file_id, record_size, max_rec_nr,
@@ -2975,6 +3031,29 @@ void MakeFile(){
                         status = uFR_SAM_DesfireCreateCyclicRecordFile3k3desAuth(key_nr, aid, file_id, record_size, max_rec_nr,
                                                         read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
                                                         communication_settings, &card_status, &exec_time);
+                }
+                else
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateTransMacFileAesAuth(key_nr, aid, file_id,
+                                                                          read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                                          communication_settings, trans_mac_key,
+                                                                          &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateTransMacFileDesAuth(key_nr, aid, file_id,
+                                                                          read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                                          communication_settings, trans_mac_key,
+                                                                          &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireCreateTransMacFile2k3desAuth(key_nr, aid, file_id,
+                                                                          read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                                          communication_settings, trans_mac_key,
+                                                                          &card_status, &exec_time);
+                    else
+                        uFR_SAM_DesfireCreateTransMacFile3k3desAuth(key_nr, aid, file_id,
+                                                                          read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                                          communication_settings, trans_mac_key,
+                                                                          &card_status, &exec_time);
                 }
             }
             else
@@ -3032,7 +3111,7 @@ void MakeFile(){
                                                         read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
                                                         communication_settings, &card_status, &exec_time);
                 }
-                else
+                else if(file_choice == 4)
                 {
                     if(key_type_nr == AES_KEY_TYPE)
                         status = uFR_int_DesfireCreateCyclicRecordFile_aes_PK(key_ext, aid, file_id, record_size, max_rec_nr,
@@ -3050,6 +3129,29 @@ void MakeFile(){
                         status = uFR_int_DesfireCreateCyclicRecordFile_3k3des_PK(key_ext, aid, file_id, record_size, max_rec_nr,
                                                         read_key_nr, write_key_nr, read_write_key_nr, change_key_nr,
                                                         communication_settings, &card_status, &exec_time);
+                }
+                else
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateTransMacFile_aes_PK(key_ext, aid, file_id,
+                                                          read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                          communication_settings, trans_mac_key,
+                                                          &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireCreateTransMacFile_des_PK(key_ext, aid, file_id,
+                                                          read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                          communication_settings, trans_mac_key,
+                                                          &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireCreateTransMacFile_2k3des_PK(key_ext, aid, file_id,
+                                                          read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                          communication_settings, trans_mac_key,
+                                                          &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireCreateTransMacFile_3k3des_PK(key_ext, aid, file_id,
+                                                          read_key_nr, commit_reader_id_key_nr, change_key_nr,
+                                                          communication_settings, trans_mac_key,
+                                                          &card_status, &exec_time);
                 }
             }
         }
@@ -3322,7 +3424,10 @@ void IncreaseValueFile()
 	unsigned char key_nr = 0;
 	unsigned long aid;
 	unsigned char file_id, aid_key_nr;
-    int file_value = 0, comm_choice = 0;
+    int file_value = 0, comm_choice = 0, trans_mac = 0, reader_id_int = 0;
+    unsigned char use_reader_id = 0;
+    unsigned char reader_id[16], prev_enc_reader_id[16], trans_mac_value[8];
+    uint32_t trans_mac_cnt;
 
 
     if (internal_key == false)
@@ -3362,65 +3467,161 @@ void IncreaseValueFile()
 		break;
 	}
 
+	printf("\nDesfire Light and Desfire EV2 only\n");
+	printf("For other cards enter 0\n");
+	printf("0 - Transaction MAC is not used\n");
+	printf("1 - Transaction MAC is used\n");
+    scanf("%d%*c", &trans_mac);
+
+    printf("\nDesfire Light and Desfire EV2 only\n");
+    printf("For other cards enter 0\n");
+    printf("0 - Reader ID is not used\n");
+    printf("1 - Reader ID is used\n");
+    scanf("%d%*c", &reader_id_int);
+    use_reader_id = reader_id_int;
+
 	printf("\nValue for increasing: \n");
     scanf("%d%*c", &file_value);
-
 
 	if (master_authent_req == true)
     {
         if (internal_key == true)
         {
-            if(key_type_nr == AES_KEY_TYPE)
-                status =  uFR_int_DesfireIncreaseValueFile_aes(key_nr, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status =  uFR_int_DesfireIncreaseValueFile_des(key_nr, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status =  uFR_int_DesfireIncreaseValueFile_2k3des(key_nr, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
+            if(trans_mac == 0)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status =  uFR_int_DesfireIncreaseValueFile_aes(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status =  uFR_int_DesfireIncreaseValueFile_des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status =  uFR_int_DesfireIncreaseValueFile_2k3des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else
+                    status =  uFR_int_DesfireIncreaseValueFile_3k3des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+            }
             else
-                status =  uFR_int_DesfireIncreaseValueFile_3k3des(key_nr, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status =  uFR_int_DesfireIncreaseValueFile_TransMac_aes(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time,
+                                  use_reader_id, reader_id, prev_enc_reader_id,
+                                  &trans_mac_cnt, trans_mac_value);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status =  uFR_int_DesfireIncreaseValueFile_TransMac_des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time,
+                                  use_reader_id, reader_id, prev_enc_reader_id,
+                                  &trans_mac_cnt, trans_mac_value);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status =  uFR_int_DesfireIncreaseValueFile_TransMac_2k3des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time,
+                                  use_reader_id, reader_id, prev_enc_reader_id,
+                                  &trans_mac_cnt, trans_mac_value);
+                else
+                    status =  uFR_int_DesfireIncreaseValueFile_TransMac_3k3des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time,
+                                  use_reader_id, reader_id, prev_enc_reader_id,
+                                  &trans_mac_cnt, trans_mac_value);
+            }
 		}
 		else
 		{
 			if(sam_key == true)
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status =  uFR_SAM_DesfireIncreaseValueFileAesAuth(key_nr, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status =  uFR_SAM_DesfireIncreaseValueFileDesAuth(key_nr, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status =  uFR_SAM_DesfireIncreaseValueFile2k3desAuth(key_nr, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
+                if(trans_mac == 0)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status =  uFR_SAM_DesfireIncreaseValueFileAesAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status =  uFR_SAM_DesfireIncreaseValueFileDesAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status =  uFR_SAM_DesfireIncreaseValueFile2k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else
+                        status =  uFR_SAM_DesfireIncreaseValueFile3k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                }
                 else
-                    status =  uFR_SAM_DesfireIncreaseValueFile3k3desAuth(key_nr, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status =  uFR_SAM_DesfireIncreaseValueFile_TransMac_AesAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status =  uFR_SAM_DesfireIncreaseValueFile_TransMac_DesAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status =  uFR_SAM_DesfireIncreaseValueFile_TransMac_2k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else
+                        status =  uFR_SAM_DesfireIncreaseValueFile_TransMac_3k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                }
             }
 			else
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireIncreaseValueFile_aes_PK(key_ext, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireIncreaseValueFile_des_PK(key_ext, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireIncreaseValueFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
+                if(trans_mac == 0)
+                {
+                   if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireIncreaseValueFile_aes_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireIncreaseValueFile_des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireIncreaseValueFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireIncreaseValueFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireIncreaseValueFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status =  uFR_int_DesfireIncreaseValueFile_TransMac_aes_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status =  uFR_int_DesfireIncreaseValueFile_TransMac_des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status =  uFR_int_DesfireIncreaseValueFile_TransMac_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else
+                        status =  uFR_int_DesfireIncreaseValueFile_TransMac_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                }
             }
 		}
 	}
 	else
     {
-        status =  uFR_int_DesfireIncreaseValueFile_no_auth(aid, aid_key_nr, file_id,
+        if(trans_mac == 0)
+            status =  uFR_int_DesfireIncreaseValueFile_no_auth(aid, aid_key_nr, file_id,
                               communication_settings, file_value, &card_status, &exec_time);
+        else
+            status =  uFR_int_DesfireIncreaseValueFile_TransMac_no_auth(aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
     }
 
     if (status)
@@ -3441,8 +3642,68 @@ void IncreaseValueFile()
     if(card_status == CARD_OPERATION_OK)
         std::cout << "Value increased by: " << std::to_string(file_value) << std::endl;
     else
+    {
         std::cout << "Value has not been increased" << std::endl;
+        return;
+    }
 
+    if(trans_mac)
+    {
+        int i;
+
+        printf("\nTransaction MAC counter = %d", trans_mac_cnt);
+
+        if(use_reader_id)
+        {
+            printf("\nReader ID = ");
+            for(i = 0; i < 16; i++)
+                printf("%02X", reader_id[i]);
+            printf("\nPrevious encrypted Reader ID = ");
+            for(i = 0; i < 16; i++)
+                printf("%02X", prev_enc_reader_id[i]);
+        }
+        printf("\nTransaction MAC = ");
+        for(i = 0; i < 16; i++)
+            printf("%02X", trans_mac_value[i]);
+
+        printf("\n");
+
+        unsigned char uid[10];
+        unsigned char trans_mac_key[16], prev_reader_id[16];
+        unsigned char sak[2], uid_size;
+
+        status = GetCardIdEx(sak, uid, &uid_size);
+        if(status == 0)
+        {
+            std::string trans_mac_key_str = "";
+            std::cout << "Input transaction MAC AES key (16 bytes):" << std::endl;
+            std::cin >> trans_mac_key_str;
+            if (trans_mac_key_str.length() != 32)
+            {
+                std::cout << "aes key must be 16 bytes long" << std::endl;
+                return;
+            }
+
+            convert_str_to_key(trans_mac_key_str, trans_mac_key, 16);
+
+            status = dfl_check_credit_value_transaction_mac(file_id, file_value, trans_mac_cnt, uid,
+                                                        trans_mac_key, reader_id, prev_enc_reader_id,
+                                                        trans_mac_value, prev_reader_id);
+            if(status)
+                printf("\nTransaction MAC is not correct\n");
+            else
+            {
+                printf("\nTransaction MAC is correct\n");
+                printf("Previous Reader ID = ");
+                for(i = 0; i < 16; i++)
+                    printf("%02X", prev_reader_id[i]);
+                printf("\n");
+            }
+        }
+        else
+            printf("\nGet Card UID error\n");
+
+    }
 }
 //------------------------------------------------------------------------------
 
@@ -3457,8 +3718,10 @@ void DecreaseValueFile()
 	unsigned char key_nr = 0;
 	unsigned long aid;
 	unsigned char file_id, aid_key_nr;
-    int file_value = 0, comm_choice = 0;
-
+    int file_value = 0, comm_choice = 0, trans_mac = 0, reader_id_int = 0;;
+    unsigned char use_reader_id = 0;
+    unsigned char reader_id[16], prev_enc_reader_id[16], trans_mac_value[8];
+    uint32_t trans_mac_cnt;
 
     if (internal_key == false)
     {
@@ -3497,66 +3760,164 @@ void DecreaseValueFile()
 		break;
 	}
 
+	printf("\nDesfire Light and Desfire EV2 only\n");
+	printf("For other cards enter 0\n");
+	printf("0 - Transaction MAC is not used\n");
+	printf("1 - Transaction MAC is used\n");
+    scanf("%d%*c", &trans_mac);
+
+    printf("\nDesfire Light and Desfire EV2 only\n");
+    printf("For other cards enter 0\n");
+    printf("0 - Reader ID is not used\n");
+    printf("1 - Reader ID is used\n");
+    scanf("%d%*c", &reader_id_int);
+    use_reader_id = reader_id_int;
+
 	printf("\nValue for decreasing: \n");
     scanf("%d%*c", &file_value);
-
 
 	if (master_authent_req == true)
     {
         if (internal_key == true)
         {
-            if(key_type_nr == AES_KEY_TYPE)
-                status =  uFR_int_DesfireDecreaseValueFile_aes(key_nr, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status =  uFR_int_DesfireDecreaseValueFile_des(key_nr, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status =  uFR_int_DesfireDecreaseValueFile_2k3des(key_nr, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
+            if(trans_mac == 0)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status =  uFR_int_DesfireDecreaseValueFile_aes(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status =  uFR_int_DesfireDecreaseValueFile_des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status =  uFR_int_DesfireDecreaseValueFile_2k3des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+                else
+                    status =  uFR_int_DesfireDecreaseValueFile_3k3des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time);
+            }
             else
-                status =  uFR_int_DesfireDecreaseValueFile_3k3des(key_nr, aid, aid_key_nr, file_id,
-                              communication_settings, file_value, &card_status, &exec_time);
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status =  uFR_int_DesfireDecreaseValueFile_TransMac_aes(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time,
+                                  use_reader_id, reader_id, prev_enc_reader_id,
+                                  &trans_mac_cnt, trans_mac_value);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status =  uFR_int_DesfireDecreaseValueFile_TransMac_des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time,
+                                  use_reader_id, reader_id, prev_enc_reader_id,
+                                  &trans_mac_cnt, trans_mac_value);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status =  uFR_int_DesfireDecreaseValueFile_TransMac_2k3des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time,
+                                  use_reader_id, reader_id, prev_enc_reader_id,
+                                  &trans_mac_cnt, trans_mac_value);
+                else
+                    status =  uFR_int_DesfireDecreaseValueFile_TransMac_3k3des(key_nr, aid, aid_key_nr, file_id,
+                                  communication_settings, file_value, &card_status, &exec_time,
+                                  use_reader_id, reader_id, prev_enc_reader_id,
+                                  &trans_mac_cnt, trans_mac_value);
+            }
+
 		}
 		else
 		{
 			if(sam_key == true)
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status =  uFR_SAM_DesfireDecreaseValueFileAesAuth(key_nr, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status =  uFR_SAM_DesfireDecreaseValueFileDesAuth(key_nr, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status =  uFR_SAM_DesfireDecreaseValueFile2k3desAuth(key_nr, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
+                if(trans_mac == 0)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status =  uFR_SAM_DesfireDecreaseValueFileAesAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status =  uFR_SAM_DesfireDecreaseValueFileDesAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status =  uFR_SAM_DesfireDecreaseValueFile2k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else
+                        status =  uFR_SAM_DesfireDecreaseValueFile3k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                }
                 else
-                    status =  uFR_SAM_DesfireDecreaseValueFile3k3desAuth(key_nr, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status =  uFR_SAM_DesfireDecreaseValueFile_TransMac_AesAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status =  uFR_SAM_DesfireDecreaseValueFile_TransMac_DesAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status =  uFR_SAM_DesfireDecreaseValueFile_TransMac_2k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else
+                        status =  uFR_SAM_DesfireDecreaseValueFile_TransMac_3k3desAuth(key_nr, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                }
+
             }
 			else
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireDecreaseValueFile_aes_PK(key_ext, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireDecreaseValueFile_des_PK(key_ext, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireDecreaseValueFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
+                if(trans_mac == 0)
+                {
+                   if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireDecreaseValueFile_aes_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireDecreaseValueFile_des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireDecreaseValueFile_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireDecreaseValueFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireDecreaseValueFile_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
-                                  communication_settings, file_value, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status =  uFR_int_DesfireDecreaseValueFile_TransMac_aes_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status =  uFR_int_DesfireDecreaseValueFile_TransMac_des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status =  uFR_int_DesfireDecreaseValueFile_TransMac_2k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                    else
+                        status =  uFR_int_DesfireDecreaseValueFile_TransMac_3k3des_PK(key_ext, aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+                }
             }
-
 		}
 	}
 	else
     {
-        status =  uFR_int_DesfireDecreaseValueFile_no_auth(aid, aid_key_nr, file_id,
+        if(trans_mac == 0)
+            status =  uFR_int_DesfireDecreaseValueFile_no_auth(aid, aid_key_nr, file_id,
                               communication_settings, file_value, &card_status, &exec_time);
+        else
+            status =  uFR_int_DesfireDecreaseValueFile_TransMac_no_auth(aid, aid_key_nr, file_id,
+                                      communication_settings, file_value, &card_status, &exec_time,
+                                      use_reader_id, reader_id, prev_enc_reader_id,
+                                      &trans_mac_cnt, trans_mac_value);
+
     }
 
     if (status)
@@ -3576,7 +3937,69 @@ void DecreaseValueFile()
     if(card_status == CARD_OPERATION_OK)
         std::cout << "Value decreased by: " << std::to_string(file_value) << std::endl;
     else
+    {
         std::cout << "Value has not be decreased" << std::endl;
+        return;
+    }
+
+    if(trans_mac)
+    {
+        int i;
+
+        printf("\nTransaction MAC counter = %d", trans_mac_cnt);
+
+        if(use_reader_id)
+        {
+            printf("\nReader ID = ");
+            for(i = 0; i < 16; i++)
+                printf("%02X", reader_id[i]);
+            printf("\nPrevious encrypted Reader ID = ");
+            for(i = 0; i < 16; i++)
+                printf("%02X", prev_enc_reader_id[i]);
+        }
+        printf("\nTransaction MAC = ");
+        for(i = 0; i < 16; i++)
+            printf("%02X", trans_mac_value[i]);
+
+        printf("\n");
+
+        unsigned char uid[10];
+        unsigned char trans_mac_key[16], prev_reader_id[16];
+        unsigned char sak[2], uid_size;
+
+        status = GetCardIdEx(sak, uid, &uid_size);
+        if(status == 0)
+        {
+            std::string trans_mac_key_str = "";
+            std::cout << "Input transaction MAC AES key (16 bytes):" << std::endl;
+            std::cin >> trans_mac_key_str;
+            if (trans_mac_key_str.length() != 32)
+            {
+                std::cout << "aes key must be 16 bytes long" << std::endl;
+                return;
+            }
+
+            convert_str_to_key(trans_mac_key_str, trans_mac_key, 16);
+
+            status = dfl_check_debit_value_transaction_mac(file_id, file_value, trans_mac_cnt, uid,
+                                                        trans_mac_key, reader_id, prev_enc_reader_id,
+                                                        trans_mac_value, prev_reader_id);
+            if(status)
+                printf("\nTransaction MAC is not correct\n");
+            else
+            {
+                printf("\nTransaction MAC is correct\n");
+                printf("Previous Reader ID = ");
+                for(i = 0; i < 16; i++)
+                    printf("%02X", prev_reader_id[i]);
+                printf("\n");
+            }
+        }
+        else
+            printf("\nGet Card UID error\n");
+
+    }
+
 }
 
 //------------------------------------------------------------------------------
@@ -3590,15 +4013,17 @@ void WriteStdFile()
 	unsigned char file_data[10000];
 	int file_length;
 	unsigned char communication_settings;
-	int comm_choice = 0;
-
+	int comm_choice = 0, trans_mac = 0, reader_id_int = 0;
+    unsigned char use_reader_id = 0;
+    unsigned char reader_id[16], prev_enc_reader_id[16], trans_mac_value[8];
+    uint32_t trans_mac_cnt;
 
 	unsigned char key_ext[24];
 	unsigned char key_nr = 0;
 	unsigned long aid;
 	unsigned char file_id, aid_key_nr;
 	int file_type;
-
+	int card_type;
 
     FILE *stream;
 
@@ -3658,6 +4083,22 @@ void WriteStdFile()
     fread(file_data,file_length,1,stream);
     fclose(stream);
 
+    if(file_type == 2)
+    {
+        printf("\nDesfire Light and Desfire EV2 only\n");
+        printf("For other cards enter 0\n");
+        printf("0 - Transaction MAC is not used\n");
+        printf("1 - Transaction MAC is used\n");
+        scanf("%d%*c", &trans_mac);
+
+        printf("\nDesfire Light and Desfire EV2 only\n");
+        printf("For other cards enter 0\n");
+        printf("0 - Reader ID is not used\n");
+        printf("1 - Reader ID is used\n");
+        scanf("%d%*c", &reader_id_int);
+        use_reader_id = reader_id_int;
+    }
+
     if(master_authent_req == true)
     {
         if (internal_key == true)
@@ -3675,14 +4116,33 @@ void WriteStdFile()
             }
             else
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireWriteRecord_aes(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireWriteRecord_des(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireWriteRecord_2k3des(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                if(trans_mac == 0)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireWriteRecord_aes(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireWriteRecord_des(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireWriteRecord_2k3des(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireWriteRecord_3k3des(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireWriteRecord_3k3des(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireWriteRecord_TransMac_aes(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                         use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireWriteRecord_TransMac_des(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                         use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireWriteRecord_TransMac_2k3des(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                         use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    else
+                        status = uFR_int_DesfireWriteRecord_TransMac_3k3des(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                         use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                }
+
             }
 		}
 		else
@@ -3702,14 +4162,32 @@ void WriteStdFile()
                 }
                 else
                 {
-                    if(key_type_nr == AES_KEY_TYPE)
-                        status = uFR_SAM_DesfireWriteRecordAesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
-                    else if(key_type_nr == DES_KEY_TYPE)
-                        status = uFR_SAM_DesfireWriteRecordDesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
-                    else if(key_type_nr == DES2K_KEY_TYPE)
-                        status = uFR_SAM_DesfireWriteRecord2k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    if(trans_mac == 0)
+                    {
+                        if(key_type_nr == AES_KEY_TYPE)
+                            status = uFR_SAM_DesfireWriteRecordAesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                        else if(key_type_nr == DES_KEY_TYPE)
+                            status = uFR_SAM_DesfireWriteRecordDesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                        else if(key_type_nr == DES2K_KEY_TYPE)
+                            status = uFR_SAM_DesfireWriteRecord2k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                        else
+                            status = uFR_SAM_DesfireWriteRecord3k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    }
                     else
-                        status = uFR_SAM_DesfireWriteRecord3k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+                    {
+                        if(key_type_nr == AES_KEY_TYPE)
+                            status = uFR_SAM_DesfireWriteRecord_TransMac_AesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                        else if(key_type_nr == DES_KEY_TYPE)
+                            status = uFR_SAM_DesfireWriteRecord_TransMac_DesAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                        else if(key_type_nr == DES2K_KEY_TYPE)
+                            status = uFR_SAM_DesfireWriteRecord_TransMac_2k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                        else
+                            status = uFR_SAM_DesfireWriteRecord_TransMac_3k3desAuth(key_nr, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    }
                 }
             }
             else
@@ -3727,14 +4205,33 @@ void WriteStdFile()
                 }
                 else
                 {
-                    if(key_type_nr == AES_KEY_TYPE)
-                        status = uFR_int_DesfireWriteRecord_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
-                    else if(key_type_nr == DES_KEY_TYPE)
-                        status = uFR_int_DesfireWriteRecord_des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
-                    else if(key_type_nr == DES2K_KEY_TYPE)
-                        status = uFR_int_DesfireWriteRecord_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                    if(trans_mac == 0)
+                    {
+                        if(key_type_nr == AES_KEY_TYPE)
+                            status = uFR_int_DesfireWriteRecord_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                        else if(key_type_nr == DES_KEY_TYPE)
+                            status = uFR_int_DesfireWriteRecord_des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                        else if(key_type_nr == DES2K_KEY_TYPE)
+                            status = uFR_int_DesfireWriteRecord_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                        else
+                            status = uFR_int_DesfireWriteRecord_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                    }
                     else
-                        status = uFR_int_DesfireWriteRecord_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings,file_data, &card_status, &exec_time);
+                    {
+                        if(key_type_nr == AES_KEY_TYPE)
+                            status = uFR_int_DesfireWriteRecord_TransMac_aes_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                        else if(key_type_nr == DES_KEY_TYPE)
+                            status = uFR_int_DesfireWriteRecord_TransMac_des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                        else if(key_type_nr == DES2K_KEY_TYPE)
+                            status = uFR_int_DesfireWriteRecord_TransMac_2k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                        else
+                            status = uFR_int_DesfireWriteRecord_TransMac_3k3des_PK(key_ext, aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    }
+
                 }
             }
 		}
@@ -3744,7 +4241,14 @@ void WriteStdFile()
         if(file_type == 1)
             status = uFR_int_DesfireWriteStdDataFile_no_auth(aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
         else
-            status = uFR_int_DesfireWriteRecord_no_auth(aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+        {
+            if(trans_mac == 0)
+                status = uFR_int_DesfireWriteRecord_no_auth(aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time);
+            else
+                status = uFR_int_DesfireWriteRecord_TransMac_no_auth(aid, aid_key_nr, file_id, 0, file_length, communication_settings, file_data, &card_status, &exec_time,
+                                                                     use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+        }
+
     }
 
     if (status)
@@ -3761,6 +4265,80 @@ void WriteStdFile()
     std::cout << "Card status is: " << switch_card_status(card_status) << std::endl;
 
     std::cout << "Execution time: " << exec_time << " ms" << std::endl;
+
+    if(card_status == CARD_OPERATION_OK)
+        std::cout << "Writing is successful" << std::endl;
+    else
+    {
+        std::cout << "Writing error" << std::endl;
+        return;
+    }
+
+    if(trans_mac)
+    {
+        int i;
+
+        printf("\nTransaction MAC counter = %d", trans_mac_cnt);
+
+        if(use_reader_id)
+        {
+            printf("\nReader ID = ");
+            for(i = 0; i < 16; i++)
+                printf("%02X", reader_id[i]);
+            printf("\nPrevious encrypted Reader ID = ");
+            for(i = 0; i < 16; i++)
+                printf("%02X", prev_enc_reader_id[i]);
+        }
+        printf("\nTransaction MAC = ");
+        for(i = 0; i < 16; i++)
+            printf("%02X", trans_mac_value[i]);
+
+        printf("\n");
+
+        unsigned char uid[10];
+        unsigned char trans_mac_key[16], prev_reader_id[16];
+        unsigned char sak[2], uid_size;
+
+        status = GetCardIdEx(sak, uid, &uid_size);
+        if(status == 0)
+        {
+            std::string trans_mac_key_str = "";
+            std::cout << "Input transaction MAC AES key (16 bytes):" << std::endl;
+            std::cin >> trans_mac_key_str;
+            if (trans_mac_key_str.length() != 32)
+            {
+                std::cout << "aes key must be 16 bytes long" << std::endl;
+                return;
+            }
+
+            convert_str_to_key(trans_mac_key_str, trans_mac_key, 16);
+
+            printf("\nEnter card type:\n");
+            printf("1 - Desfire EV2\n");
+            printf("2 - Desfire Light\n");
+            scanf("%d%*c", &card_type);
+            if(card_type == 1)
+                status = desfire_check_write_record_transaction_mac(file_id, 0, file_length, file_data, trans_mac_cnt, uid,
+                                                        trans_mac_key, reader_id, prev_enc_reader_id,
+                                                        trans_mac_value, prev_reader_id);
+            else
+                status = dfl_check_write_record_transaction_mac(file_id, 0, file_length, file_data, trans_mac_cnt, uid,
+                                                        trans_mac_key, reader_id, prev_enc_reader_id,
+                                                        trans_mac_value, prev_reader_id);
+            if(status)
+                printf("\nTransaction MAC is not correct\n");
+            else
+            {
+                printf("\nTransaction MAC is correct\n");
+                printf("Previous Reader ID = ");
+                for(i = 0; i < 16; i++)
+                    printf("%02X", prev_reader_id[i]);
+                printf("\n");
+            }
+        }
+        else
+            printf("\nGet Card UID error\n");
+    }
 
 }
 //------------------------------------------------------------------------------
@@ -4260,6 +4838,10 @@ void ClearRecord(void)
 	unsigned long aid;
 	unsigned char file_id;
 	unsigned char aid_key_nr;
+	int trans_mac = 0, reader_id_int = 0;
+    unsigned char use_reader_id = 0;
+    unsigned char reader_id[16], prev_enc_reader_id[16], trans_mac_value[8];
+    uint32_t trans_mac_cnt;
 
 	aid = strtol(settings[1].c_str(),NULL,16);
 
@@ -4281,48 +4863,122 @@ void ClearRecord(void)
         key_nr = stoul(settings[4],nullptr,10);
     }
 
+    printf("\nDesfire Light and Desfire EV2 only\n");
+    printf("For other cards enter 0\n");
+    printf("0 - Transaction MAC is not used\n");
+    printf("1 - Transaction MAC is used\n");
+    scanf("%d%*c", &trans_mac);
+
+    printf("\nDesfire Light and Desfire EV2 only\n");
+    printf("For other cards enter 0\n");
+    printf("0 - Reader ID is not used\n");
+    printf("1 - Reader ID is used\n");
+    scanf("%d%*c", &reader_id_int);
+    use_reader_id = reader_id_int;
 
     if (master_authent_req == true)
     {
         if (internal_key == true)
         {
-            if(key_type_nr == AES_KEY_TYPE)
-                status = uFR_int_DesfireClearRecordFile_aes_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
-            else if(key_type_nr == DES_KEY_TYPE)
-                status = uFR_int_DesfireClearRecordFile_des_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
-            else if(key_type_nr == DES2K_KEY_TYPE)
-                status = uFR_int_DesfireClearRecordFile_2k3des_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+            if(trans_mac == 0)
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireClearRecordFile_aes_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireClearRecordFile_des_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireClearRecordFile_2k3des_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                else
+                    status = uFR_int_DesfireClearRecordFile_3k3des_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+            }
             else
-                status = uFR_int_DesfireClearRecordFile_3k3des_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+            {
+                if(key_type_nr == AES_KEY_TYPE)
+                    status = uFR_int_DesfireClearRecordFile_TransMac_aes(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                         use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                else if(key_type_nr == DES_KEY_TYPE)
+                    status = uFR_int_DesfireClearRecordFile_TransMac_des(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                         use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                else if(key_type_nr == DES2K_KEY_TYPE)
+                    status = uFR_int_DesfireClearRecordFile_TransMac_2k3des(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                         use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                else
+                    status = uFR_int_DesfireClearRecordFile_TransMac_3k3des(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                         use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+            }
         }
         else
         {
             if(sam_key == true)
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_SAM_DesfireClearRecordFileAesAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_SAM_DesfireClearRecordFileDesAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_SAM_DesfireClearRecordFile2k3desAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                if(trans_mac == 0)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireClearRecordFileAesAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireClearRecordFileDesAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireClearRecordFile2k3desAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                    else
+                        status = uFR_SAM_DesfireClearRecordFile3k3desAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_SAM_DesfireClearRecordFile3k3desAuth_2(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_SAM_DesfireClearRecordFile_TransMac_AesAuth(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_SAM_DesfireClearRecordFile_TransMac_DesAuth(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_SAM_DesfireClearRecordFile_TransMac_2k3desAuth(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    else
+                        status = uFR_SAM_DesfireClearRecordFile_TransMac_3k3desAuth(key_nr, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                }
+
             }
             else
             {
-                if(key_type_nr == AES_KEY_TYPE)
-                    status = uFR_int_DesfireClearRecordFile_aes_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
-                else if(key_type_nr == DES_KEY_TYPE)
-                    status = uFR_int_DesfireClearRecordFile_des_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
-                else if(key_type_nr == DES2K_KEY_TYPE)
-                    status = uFR_int_DesfireClearRecordFile_2k3des_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                if(trans_mac == 0)
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireClearRecordFile_aes_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireClearRecordFile_des_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireClearRecordFile_2k3des_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                    else
+                        status = uFR_int_DesfireClearRecordFile_3k3des_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                }
                 else
-                    status = uFR_int_DesfireClearRecordFile_3k3des_PK_2(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time);
+                {
+                    if(key_type_nr == AES_KEY_TYPE)
+                        status = uFR_int_DesfireClearRecordFile_TransMac_aes_PK(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES_KEY_TYPE)
+                        status = uFR_int_DesfireClearRecordFile_TransMac_des_PK(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    else if(key_type_nr == DES2K_KEY_TYPE)
+                        status = uFR_int_DesfireClearRecordFile_TransMac_2k3des_PK(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                    else
+                        status = uFR_int_DesfireClearRecordFile_TransMac_3k3des_PK(key_ext, aid, aid_key_nr, file_id, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+                }
             }
         }
     }
     else
-       status = uFR_int_DesfireClearRecordFile_no_auth(aid, file_id, &card_status, &exec_time);
+    {
+        if(trans_mac == 0)
+            status = uFR_int_DesfireClearRecordFile_no_auth(aid, file_id, &card_status, &exec_time);
+        else
+            status = uFR_int_DesfireClearRecordFile_TransMac_no_auth(aid, file_id, &card_status, &exec_time,
+                                                                             use_reader_id, reader_id, prev_enc_reader_id, &trans_mac_cnt, trans_mac_value);
+    }
+
 
     if (status)
     {
@@ -4341,6 +4997,69 @@ void ClearRecord(void)
 
     if(card_status == CARD_OPERATION_OK)
         std::cout << "All records deleted" << std::endl;
+    else
+    {
+        std::cout << "Clear record error" << std::endl;
+        return;
+    }
+
+    if(trans_mac)
+    {
+        int i;
+
+        printf("\nTransaction MAC counter = %d", trans_mac_cnt);
+
+        if(use_reader_id)
+        {
+            printf("\nReader ID = ");
+            for(i = 0; i < 16; i++)
+                printf("%02X", reader_id[i]);
+            printf("\nPrevious encrypted Reader ID = ");
+            for(i = 0; i < 16; i++)
+                printf("%02X", prev_enc_reader_id[i]);
+        }
+        printf("\nTransaction MAC = ");
+        for(i = 0; i < 16; i++)
+            printf("%02X", trans_mac_value[i]);
+
+        printf("\n");
+
+        unsigned char uid[10];
+        unsigned char trans_mac_key[16], prev_reader_id[16];
+        unsigned char sak[2], uid_size;
+
+        status = GetCardIdEx(sak, uid, &uid_size);
+        if(status == 0)
+        {
+            std::string trans_mac_key_str = "";
+            std::cout << "Input transaction MAC AES key (16 bytes):" << std::endl;
+            std::cin >> trans_mac_key_str;
+            if (trans_mac_key_str.length() != 32)
+            {
+                std::cout << "aes key must be 16 bytes long" << std::endl;
+                return;
+            }
+
+            convert_str_to_key(trans_mac_key_str, trans_mac_key, 16);
+
+            status = desfire_check_clear_record_transaction_mac(file_id, trans_mac_cnt, uid,
+                                                        trans_mac_key, reader_id, prev_enc_reader_id,
+                                                        trans_mac_value, prev_reader_id);
+
+            if(status)
+                printf("\nTransaction MAC is not correct\n");
+            else
+            {
+                printf("\nTransaction MAC is correct\n");
+                printf("Previous Reader ID = ");
+                for(i = 0; i < 16; i++)
+                    printf("%02X", prev_reader_id[i]);
+                printf("\n");
+            }
+        }
+        else
+            printf("\nGet Card UID error\n");
+    }
 }
 
 void SamStoreKey(void)

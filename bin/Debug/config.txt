@@ -1,5 +1,5 @@
-3K3DES key: 010203040506070809101112131415161718192021222324
+AES key: 00000000000000000000000000000000
 AID 3 bytes hex: 000000
-AID key number for auth: 0
+AID key number for auth: 1
 File ID: 1
 Internal key number: 6

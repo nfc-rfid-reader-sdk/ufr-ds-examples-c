@@ -1,1 +1,1 @@
-Test for write data to card and read data from card. 
+123456789ABCDEF0
