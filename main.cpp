@@ -3663,7 +3663,7 @@ void IncreaseValueFile()
                 printf("%02X", prev_enc_reader_id[i]);
         }
         printf("\nTransaction MAC = ");
-        for(i = 0; i < 16; i++)
+        for(i = 0; i < 8; i++)
             printf("%02X", trans_mac_value[i]);
 
         printf("\n");
@@ -3958,7 +3958,7 @@ void DecreaseValueFile()
                 printf("%02X", prev_enc_reader_id[i]);
         }
         printf("\nTransaction MAC = ");
-        for(i = 0; i < 16; i++)
+        for(i = 0; i < 8; i++)
             printf("%02X", trans_mac_value[i]);
 
         printf("\n");
@@ -4290,7 +4290,7 @@ void WriteStdFile()
                 printf("%02X", prev_enc_reader_id[i]);
         }
         printf("\nTransaction MAC = ");
-        for(i = 0; i < 16; i++)
+        for(i = 0; i < 8; i++)
             printf("%02X", trans_mac_value[i]);
 
         printf("\n");
@@ -5019,7 +5019,7 @@ void ClearRecord(void)
                 printf("%02X", prev_enc_reader_id[i]);
         }
         printf("\nTransaction MAC = ");
-        for(i = 0; i < 16; i++)
+        for(i = 0; i < 8; i++)
             printf("%02X", trans_mac_value[i]);
 
         printf("\n");
